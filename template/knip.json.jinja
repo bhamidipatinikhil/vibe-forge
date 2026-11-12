@@ -1,5 +1,8 @@
 {
 	"$schema": "https://unpkg.com/knip@6/schema.json",
+{%- if harness == 'opencode' and kind == 'service' %}
+	"entry": ["src/{index,instrumentation}.ts!", "scripts/**/*.{ts,mjs}"],
+{%- else %}
 	"entry": [
 		"src/{index,instrumentation}.ts!",
 		"scripts/**/*.{ts,mjs}"{% if harness in ['claude', 'both'] %},
@@ -9,6 +12,7 @@
 		"src/ui/routes/**/*.tsx!",
 		"content-collections.ts"{% endif %}
 	],
+{%- endif %}
 	"project": [
 		"src/**/*.{ts,tsx}!",
 		"!src/**/*.{test,spec}.{ts,tsx}!",

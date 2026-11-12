@@ -32,6 +32,9 @@
 		"skipLibCheck": true,
 		"noEmit": true
 	},
+{%- if harness == 'opencode' and kind == 'service' %}
+	"include": ["src/**/*", "tests/**/*", "scripts/**/*", "*.config.ts"]
+{%- else %}
 	"include": [
 		"src/**/*",
 		"tests/**/*",
@@ -41,6 +44,7 @@
 		{%- endif %}
 		"*.config.ts"{% if kind == 'web' %},
 		"content-collections.ts"{% endif %}
-	]{% if kind == 'web' %},
+	]
+{%- endif %}{% if kind == 'web' %},
 	"exclude": ["src/ui/paraglide/**"]{% endif %}
 }
