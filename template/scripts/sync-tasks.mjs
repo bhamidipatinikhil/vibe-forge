@@ -59,8 +59,11 @@ const visit = (t) => {
 };
 for (const t of open) visit(t);
 
-console.log(`sync-tasks: ${open.length} open of ${tasks.size} tasks`);
-for (const t of ordered) console.log(`  ready: ${t.id} (${t.file})`);
+console.log(`sync-tasks: ${open.length} open of ${tasks.size} tasks (dependency order; the first with no open deps is ready)`);
+for (const [i, t] of ordered.entries()) {
+  const deps = t.deps.length ? `, dep: ${t.deps.join(",")}` : "";
+  console.log(`  ${i + 1}. ${t.id}${deps} (${t.file})`);
+}
 
 if (useBd) {
   const bd = existsSync(join(process.cwd(), "node_modules", ".bin", "bd")) ? "node_modules/.bin/bd" : "bd";
