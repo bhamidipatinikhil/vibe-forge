@@ -147,7 +147,11 @@ doctor:
     {%- if harness in ['opencode', 'both'] %}
     opencode --version
     {%- endif %}
+    {%- if harness in ['claude', 'both'] %}
     @echo "doctor OK. Once per machine: open /sandbox in Claude Code and confirm bubblewrap + socat are green."
+    {%- else %}
+    @echo "doctor OK. Start OpenCode from the dev shell so hooks and direnv see the Nix toolchain."
+    {%- endif %}
 
 # Distill: promote built components into docs/registry.md and docs/glossary.md (human approval gate).
 distill:
