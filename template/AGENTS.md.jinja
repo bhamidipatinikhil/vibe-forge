@@ -1,7 +1,7 @@
 # {{ project_name }}
 
 ## Commands (run inside the Nix shell; direnv loads it)
-- Gate (what "done" means): `just check`   — the Stop hook and CI run exactly this
+- Gate (what "done" means): `just check`   {% if harness in ['claude', 'both'] %}— the Stop hook and CI run exactly this{% else %}— CI runs exactly this; run it before you call a task done (OpenCode has no Stop hook){% endif %}
 - One test file: `pnpm exec vitest run path/to/file.test.ts` (tests start their own Postgres; nothing to run first)
 - Typecheck: `pnpm exec tsc --noEmit` · Lint: `pnpm exec biome ci . && pnpm exec eslint .`
 - Mutation score (slow): `just mutation` · Security suite: `just ci`{% if with_playwright %} · Browser end to end: `just e2e`{% endif %}

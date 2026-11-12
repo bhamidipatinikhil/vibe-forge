@@ -5,7 +5,7 @@
 # Intentionally incomplete until you switch it on: `image` and `deploy` only run once the PRODUCTION_URL repository variable
 # is set, and the TODO(project) marker below (the deploy command for your platform) is yours to fill in; until then only
 # `gates` runs on every push to main. The image comes from the root Dockerfile; migrations run before the new image
-# takes traffic (expand-only, so the running version keeps working: .claude/rules/migrations.md).
+# takes traffic (expand-only, so the running version keeps working: the migrations rule, docs/PLAYBOOK.md).
 name: deploy
 on:
   push: { branches: [main] }

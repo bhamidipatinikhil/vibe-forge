@@ -138,7 +138,15 @@ git add -A && git -c commit.gpgsign=false commit -qm "chore: scaffold from vibe-
 direnv allow                                                   # nix-direnv caches the shell and registers a GC root
 nix develop .#quiet -c pnpm install --frozen-lockfile           # from here on every install is frozen; this one proves the committed lockfile matches package.json
 nix develop .#quiet -c lefthook install                         # hooks only after a successful install
-nix develop .#quiet -c just doctor                              # version agreement: pnpm/node/playwright/claude
+nix develop .#quiet -c just doctor                              # version agreement: pnpm/node/playwright/agent CLI
 nix develop .#quiet -c just check                               # the generated project must be green before you type a prompt
-# Two commands, not `cd x && claude`: bash's direnv hook loads the project's shell only at the next prompt.
-printf 'ready: cd %q, then run claude there   (open /sandbox once and confirm the Dependencies tab is green)\n' "$dir"
+# Two commands, not `cd x && <agent>`: bash's direnv hook loads the project's shell only at the next prompt.
+# The hint names the agent(s) this project actually renders (the harness answer), so it is right for
+# opencode-only and both as well.
+harness="$(sed -n 's/^harness: *//p' .copier-answers.yml 2>/dev/null || echo both)"
+case "$harness" in
+  claude)   hint="then run claude there   (open /sandbox once and confirm the Dependencies tab is green)" ;;
+  opencode) hint="then run opencode there (start it from the dev shell so direnv sees the Nix toolchain)" ;;
+  *)        hint="then run claude — or opencode — there   (open /sandbox once in Claude Code; confirm the Dependencies tab is green)" ;;
+esac
+printf 'ready: cd %q, %s\n' "$dir" "$hint"

@@ -22,10 +22,10 @@
             {%- if with_python %}
             python312 uv                                          # listed first on purpose: semgrep propagates its own python3 (3.13) onto PATH right after itself, and PATH follows list order, so python312 must precede it for `python` to match UV_PYTHON
             {%- else %}
-            python3                                               # security-guidance plugin (.claude/settings.json) needs Python >= 3.10 + venv/pip on PATH; kept explicit although semgrep already propagates this same python3 (3.13); with_python supplies python312 instead
+            python3                                               # security-guidance plugin (Claude Code projects) needs Python >= 3.10 + venv/pip on PATH; kept explicit although semgrep already propagates this same python3 (3.13); with_python supplies python312 instead
             {%- endif %}
             node pnpm git gh just jq ripgrep fd gitleaks lefthook
-            typescript-language-server                            # binary behind the typescript-lsp Claude Code plugin
+            typescript-language-server                            # binary behind the typescript-lsp Claude Code plugin (Claude Code projects); harmless elsewhere
             semgrep trufflehog zizmor shellcheck                  # verify on your lock: nix eval nixpkgs#<name>.version; OSV-Scanner runs in CI only (supply-chain.yml)
             postgresql_18                                         # local + test database (tests start a throwaway cluster on 127.0.0.1); pg_dump for db/schema.sql
             dbmate squawk                                         # migrations (migrations/*.sql, db/schema.sql) and their lint (expand/contract safety)
@@ -53,7 +53,11 @@
         in {
           quiet = mkShell { };                                     # CI, hooks, agents: nix develop .#quiet -c just check
           default = mkShell {
+            {%- if harness in ['claude', 'both'] %}
             shellHook = ''echo "node $(node --version) | pnpm $(pnpm --version) | claude $(claude --version 2>/dev/null | head -1)"'';
+            {%- else %}
+            shellHook = ''echo "node $(node --version) | pnpm $(pnpm --version) | opencode $(opencode --version 2>/dev/null | head -1)"'';
+            {%- endif %}
           };
         });
     };

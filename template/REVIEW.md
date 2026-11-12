@@ -22,7 +22,7 @@ Report at most five Nits per review.
 
 - New API routes have an integration test
 - Log lines don't include email addresses, user IDs, or request bodies
-- Every data access is scoped by the authenticated principal (see `.claude/rules/api.md`)
+- Every data access is scoped by the authenticated principal (the API rule: `.claude/rules/api.md` in Claude Code projects, the modules section of `AGENTS.md` in OpenCode projects)
 
 ## Evidence
 
