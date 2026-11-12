@@ -799,6 +799,12 @@ That trio is the **mediator contract**. Pipelines differ only in how they *produ
 different ways of working from producing ten different kinds of mess: the repository only ever accepts work that
 arrives as a spec, a plan, and a task list — then the normal loop of chapter 8.4 takes over.
 
+**A note on spec tools.** The three files are plain markdown — you write them by hand, or ask the agent to. You
+may also use a spec-driven CLI such as **GitHub Spec Kit** (`/speckit.specify`, `/speckit.plan`, `/speckit.tasks`,
+…) or **OpenSpec** (`/opsx:propose`) if you have one installed: they are one *optional* way to produce the same
+trio, and docs/PLAYBOOK.md mentions them for Tier C work. The template ships none of them and nothing here
+requires them — no command in this guide assumes a spec CLI exists.
+
 ### 10.2 `intent-driven` — you know what you want
 
 The default. You describe the feature; the agent interviews you, then writes the trio.

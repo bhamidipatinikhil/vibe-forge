@@ -87,6 +87,7 @@ template/pipelines/intent-driven.md
 template/pipelines/README.md
 template/pipelines/reference-study.md
 template/pipelines/telemetry-driven.md
+template/pipelines/_TEMPLATE.md
 template/plans/.gitkeep
 template/pnpm-lock.yaml
 template/pnpm-workspace.yaml.jinja
