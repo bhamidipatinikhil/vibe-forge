@@ -12,7 +12,6 @@ template/biome.json.jinja
 template/CHANGELOG.md
 template/.changeset/config.json
 template/.changeset/README.md
-template/.claude/hooks/re-inject.sh
 template/commitlint.config.js
 template/{{_copier_conf.answers_file}}.jinja
 template/db/schema.sql
@@ -24,10 +23,10 @@ template/docs/decisions/0002-stack.md.jinja
 template/docs/decisions/0003-feature-modules.md.jinja
 template/docs/decisions/0004-knowledge-pipelines.md
 template/docs/glossary.md
+template/docs/{% if kind == 'web' %}registry.md{% endif %}
 template/docs/learnings.md
 template/docs/metrics.md
 template/docs/PLAYBOOK.md.jinja
-template/docs/registry.md
 template/docs/runbooks/rollback.md.jinja
 template/docs/services.md.jinja
 template/docs/upgrading/.gitkeep
@@ -50,6 +49,7 @@ template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/claude-securit
 template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/hooks/gates.sh
 template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/hooks/guard-config.sh
 template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/hooks/guard.sh
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/hooks/re-inject.sh
 template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/hooks/tests/hooks.test.ts
 template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/hooks/verify-install.sh
 template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/rules/api.md.jinja

@@ -2,7 +2,7 @@
 // stdout/stderr as the verdict. They live under .claude/ so the agent cannot edit them (Edit(.claude/hooks/**) is
 // denied) and `copier update` refreshes them with the hooks. Registry lookups in verify-install.sh are not exercised.
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -258,5 +258,33 @@ describe("gates.sh (Stop hook)", () => {
 		);
 		expect(third.code).toBe(0);
 		expect(parse(third.stdout).systemMessage).toContain("UNVERIFIED");
+	});
+});
+
+describe("re-inject.sh (SessionStart context re-injection)", () => {
+	it("exits 0 with an empty plans section when no plans exist", () => {
+		const project = repo();
+		const out = hook("re-inject.sh", {}, {}, project);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("## Active plans");
+		expect(out.stdout).toContain("## Gate status");
+		expect(out.stdout).toContain("no gate log yet");
+	});
+
+	it("lists active plans and the glossary size when they exist", () => {
+		const project = repo();
+		const plans = join(project, "plans");
+		mkdirSync(plans, { recursive: true });
+		mkdirSync(join(project, "docs"), { recursive: true });
+		writeFileSync(join(plans, "pin-notes.md"), "# Pin notes\n");
+		writeFileSync(
+			join(project, "docs", "glossary.md"),
+			"# Glossary\n\n| Term | Meaning |\n|---|---|\n| module | a product area |\n| seam | a public interface |\n",
+		);
+		const out = hook("re-inject.sh", {}, {}, project);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("plans/pin-notes.md");
+		expect(out.stdout).toContain("## Glossary terms");
+		expect(out.stdout).toContain("3");
 	});
 });
