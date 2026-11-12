@@ -70,7 +70,7 @@ op run --env-file=.env.op -- pnpm dev            # 1Password CLI: op:// referenc
 ```
 
 Locally nothing is required: every key has a development default (the database is `just db-up`'s). The agent is
-denied `Read(.env*)` and `Read(secrets/**)` in `.claude/settings.json`, and lefthook refuses to commit `.env*`,
+denied `Read(.env*)` and `Read(secrets/**)` in its adapter config ({% if harness in ['claude', 'both'] %}`.claude/settings.json`{% endif %}{% if harness in ['opencode', 'both'] %}{% if harness == 'both' %} and {% endif %}`opencode.jsonc`{% endif %}), and lefthook refuses to commit `.env*`,
 `*.pem` and `*.key` files.
 
 ## Layout

@@ -61,11 +61,11 @@
 1. Brief: one fully specified message (multi-turn drip-feeding costs ~39% in the research). Name files, inputs, expected outputs,
    the acceptance tests, and "ask at most 3 questions if a listed item is missing".
 2. Implement: watch the first minute; press Esc the moment it drifts; after two failed corrections, {%- if harness in ['claude', 'both'] %} `/clear`{%- else %} start a fresh session{%- endif %} and rewrite the brief.
-3. Verify: the Stop hook runs `just check`; ask for evidence (the command and its output), not a summary.
-4. Review: `/code-review low` in a fresh subagent, then `@reviewer` against the plan. Fix only findings that affect correctness;
+3. Verify: {%- if harness in ['claude', 'both'] %} the Stop hook runs `just check`;{%- else %} run `just check` yourself (OpenCode has no Stop hook);{%- endif %} ask for evidence (the command and its output), not a summary.
+4. Review: {%- if harness in ['claude', 'both'] %} `/code-review low` in a fresh subagent, then `@reviewer` against the plan.{%- else %} start a fresh session and ask the agent to review the diff against the plan.{%- endif %} Fix only findings that affect correctness;
    a reviewer told to find problems always finds something.
 5. Ship: small conventional commits; PR body = plan link + commands run + their output. Let the merge queue run `just ci`.
-6. Record: if you corrected the agent twice for the same thing, add one line to AGENTS.md or a `.claude/rules/` file;
+6. Record: if you corrected the agent twice for the same thing, add one line to AGENTS.md{% if harness in ['claude', 'both'] %} or a `.claude/rules/` file{% endif %};
    if a rule must hold every time, make it a hook or a lint rule instead of a sentence.
 
 ## 3. Rituals
@@ -80,7 +80,7 @@
 ## 4. When the agent fights a gate
 - It edits a test to make it pass: reject; the test is the spec. Ask why the behaviour changed.
 - It asks to install a package: check `pnpm view <name> time.created`, downloads and maintainers; prefer existing deps; one-line justification in the PR.
-- It wants `--no-frozen-lockfile`, `nix flake update`, `rm -rf`, `git push --force` or to edit `.claude/`: the hooks say no. You do those by hand, deliberately.
+- It wants `--no-frozen-lockfile`, `nix flake update`, `rm -rf`, `git push --force` or to edit its own adapter config ({% if harness in ['claude', 'both'] %}`.claude/`{% endif %}{% if harness in ['opencode', 'both'] %}{% if harness == 'both' %}, {% endif %}`opencode.jsonc`{% endif %}): the hooks say no. You do those by hand, deliberately.
 - It reports "all tests pass" without output: rerun `just check` yourself; agents have misreported test results in documented incidents.
 
 ## 5. Cost and context

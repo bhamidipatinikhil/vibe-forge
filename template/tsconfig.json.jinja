@@ -36,7 +36,9 @@
 		"src/**/*",
 		"tests/**/*",
 		"scripts/**/*",
+		{%- if harness in ['claude', 'both'] %}
 		".claude/hooks/tests/**/*",
+		{%- endif %}
 		"*.config.ts"{% if kind == 'web' %},
 		"content-collections.ts"{% endif %}
 	]{% if kind == 'web' %},

@@ -2,8 +2,8 @@
 	"$schema": "https://unpkg.com/knip@6/schema.json",
 	"entry": [
 		"src/{index,instrumentation}.ts!",
-		"scripts/**/*.{ts,mjs}",
-		".claude/hooks/tests/**/*.test.ts"{% if kind == 'web' %},
+		"scripts/**/*.{ts,mjs}"{% if harness in ['claude', 'both'] %},
+		".claude/hooks/tests/**/*.test.ts"{% endif %}{% if kind == 'web' %},
 		"src/ui/{router,client}.tsx!",
 		"src/ui/server.ts!",
 		"src/ui/routes/**/*.tsx!",
