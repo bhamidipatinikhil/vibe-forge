@@ -9,7 +9,7 @@ table of contents and the cheat sheet at the end.
 - A line starting with `$` is something you type in a terminal. Do not type the `$` itself.
 - `~/dev/my-app` is an example project folder. Use your own name.
 - `<owner>` means your GitHub user or organisation name (for this repository: `bhamidipatinikhil`).
-- Every code example in chapter 9 was built in a real generated project and passed `just check` and `just e2e`
+- Every code example in chapter 12 was built in a real generated project and passed `just check` and `just e2e`
   before it was copied here.
 
 ## Contents
@@ -21,18 +21,22 @@ table of contents and the cheat sheet at the end.
 5. [Day 0: the first fifteen minutes in a new project](#5-day-0-the-first-fifteen-minutes-in-a-new-project)
 6. [A tour of a generated project](#6-a-tour-of-a-generated-project)
 7. [Everyday commands](#7-everyday-commands)
-8. [Working with Claude Code](#8-working-with-claude-code)
-9. [Worked example: build a "notes" feature from start to finish](#9-worked-example-build-a-notes-feature-from-start-to-finish)
-10. [Recipes for common tasks](#10-recipes-for-common-tasks)
-11. [Testing: what to test, where, and how](#11-testing-what-to-test-where-and-how)
-12. [Configuration and secrets](#12-configuration-and-secrets)
-13. [Shipping: CI, releases and deployment](#13-shipping-ci-releases-and-deployment)
-14. [When something goes wrong in production](#14-when-something-goes-wrong-in-production)
-15. [Keeping projects up to date with the template](#15-keeping-projects-up-to-date-with-the-template)
-16. [Changing the template itself](#16-changing-the-template-itself)
-17. [Troubleshooting: what each failure means and how to fix it](#17-troubleshooting-what-each-failure-means-and-how-to-fix-it)
-18. [Glossary](#18-glossary)
-19. [Cheat sheet](#19-cheat-sheet)
+8. [Working with your AI agent](#8-working-with-your-ai-agent)
+9. [The knowledge layer: what the project remembers](#9-the-knowledge-layer-what-the-project-remembers)
+10. [Pipelines: how to brief a feature](#10-pipelines-how-to-brief-a-feature)
+11. [The task graph: plans and their order](#11-the-task-graph-plans-and-their-order)
+12. [Worked example: build a "notes" feature from start to finish](#12-worked-example-build-a-notes-feature-from-start-to-finish)
+13. [Recipes for common tasks](#13-recipes-for-common-tasks)
+14. [Testing: what to test, where, and how](#14-testing-what-to-test-where-and-how)
+15. [Configuration and secrets](#15-configuration-and-secrets)
+16. [Shipping: CI, releases and deployment](#16-shipping-ci-releases-and-deployment)
+17. [When something goes wrong in production](#17-when-something-goes-wrong-in-production)
+18. [Keeping projects up to date with the template](#18-keeping-projects-up-to-date-with-the-template)
+19. [Changing the template itself](#19-changing-the-template-itself)
+20. [Troubleshooting: what each failure means and how to fix it](#20-troubleshooting-what-each-failure-means-and-how-to-fix-it)
+21. [Unattended runs and measuring the process](#21-unattended-runs-and-measuring-the-process)
+22. [Glossary](#22-glossary)
+23. [Cheat sheet](#23-cheat-sheet)
 
 ---
 
@@ -95,7 +99,7 @@ Three ideas carry the whole template:
 | Place | What it is |
 | --- | --- |
 | This repository (`vibe-forge`) | The generator: `copier.yml` (the questions), `template/` (the files every project gets), `new-project.sh` |
-| A generated project | Your app. It owns its code; the template only updates the shared tooling (see chapter 15) |
+| A generated project | Your app. It owns its code; the template only updates the shared tooling (see chapter 18) |
 | `docs/PLAYBOOK.md` in each project | The short version of how to work with the agent |
 | `docs/decisions/` in each project | ADRs: why the project is built the way it is |
 | `AGENTS.md` / `CLAUDE.md` in each project | What the agent reads at the start of every session |
@@ -183,7 +187,7 @@ change before it goes to `main`.
 At the time of writing, `main` has everything this guide describes: the `web` and `service` kinds, the backend
 layers, feature modules, `requireSession`, the harness adapters (`harness: claude`, `opencode` or `both`), the
 knowledge layer (`docs/glossary.md`, `docs/registry.md`, `docs/learnings.md`, `docs/metrics.md`), the
-`pipelines/` directory and this guide (chapter 9 needs them). The first release is tagged `v0.1.0`.
+`pipelines/` directory and this guide (chapter 12 needs them). The first release is tagged `v0.1.0`.
 
 ### Put a template change on `main`
 
@@ -202,7 +206,7 @@ record commits of `main`. Then update your clone (`git switch main && git pull`)
 
 What you must **never** do is rewrite `main` itself: no `git push --force`, no rebase or amend of commits that are
 already on GitHub. Every update re-renders the exact commit a project records, and a rewritten `main` loses it
-(chapter 17 has the repair). Protect `main` on GitHub with a ruleset that blocks force pushes, as chapter 5.3 does for
+(chapter 20 has the repair). Protect `main` on GitHub with a ruleset that blocks force pushes, as chapter 5.3 does for
 projects.
 
 ### Try a template change before merging it
@@ -329,7 +333,7 @@ the project is green and ready for your first prompt.
 | `error: the project folder comes first` | You put a flag before the folder | `./new-project.sh ~/dev/my-app --defaults …` |
 | `kind=web needs the Nix Chromium` | You answered `with_playwright=no` with `kind=web` | Answer `yes`, or choose `kind=service` |
 | `not implemented in this version` | You chose `kind=library` or `with_devcontainer=yes` | Those are planned; choose something else |
-| `ERR_PNPM_...` about release age | A pinned package is younger than 3 days | Wait a day, or see chapter 10.10 |
+| `ERR_PNPM_...` about release age | A pinned package is younger than 3 days | Wait a day, or see chapter 13.10 |
 | Out of memory, or killed | The first install and `just check` are heavy | Close other heavy apps and run the script again in a fresh folder |
 
 A `warning:` never stops the script: it goes on and creates the project from GitHub's `main`. To redo it, delete the
@@ -430,7 +434,7 @@ my-app/
 │   ├── app/           the HTTP layer: Hono routes, security headers, tracing, ports.ts
 │   │   └── routes/    one file per route group (health, auth, slug, events, og, vitals)
 │   ├── infra/         the real world: database, auth, email, jobs, flags, Sentry, the server itself
-│   ├── modules/       product areas, one folder each (empty at first; see chapter 9)
+│   ├── modules/       product areas, one folder each (empty at first; see chapter 12)
 │   ├── ui/            the website (TanStack Start): routes/, components/, lib/, styles/
 │   ├── env.ts         every setting, validated at start-up
 │   └── index.ts       starts the server
@@ -531,38 +535,55 @@ Stop the database when you are done: `just db-down` (the data stays in `.data/pg
 
 ---
 
-## 8. Working with Claude Code
+## 8. Working with your AI agent
 
 ### Start it the right way
 
+The template renders an adapter for the AI coding agent you chose at creation time (the `harness` answer:
+`claude`, `opencode`, or `both`). Every project also has `AGENTS.md` — the short, harness-neutral brief every
+agent reads first. Start the agent **from inside the project folder**, in two commands:
+
 ```console
 $ cd ~/dev/my-app
-$ claude
+$ claude            # Claude Code — or: opencode
 ```
 
-Type them as two commands: bash's direnv hook loads the project's shell when the next prompt appears, so in one line
-(`cd ~/dev/my-app && claude`) Claude Code would start outside it.
+Type them as two commands: bash's direnv hook loads the project's shell when the next prompt appears, so in one
+line (`cd ~/dev/my-app && claude`) the agent would start outside the project's Nix shell.
 
-Always start it **inside the project's shell** (direnv does this for you; without direnv use `nix develop -c claude`).
-The hooks need `jq` and `nix` from that shell; without them the guard hook blocks every tool call on purpose.
+Always start it **inside the project's shell** (direnv does this for you; without direnv use
+`nix develop -c claude` or `nix develop -c opencode`).
+
+- **Claude Code** runs the project's hooks: the guard (blocks dangerous commands), the install checker (blocks
+  hallucinated packages) and the **Stop hook**, which runs `just check` when the agent wants to finish and holds
+  its turn open until the gate is green (at most four tries, then it stops and says `UNVERIFIED`).
+- **OpenCode** reads `AGENTS.md` natively and enforces the same permission posture through `opencode.jsonc`. It
+  has no Stop hook, so nothing forces the gate for you: end every task by running `just check` yourself (the
+  `/check` command shipped in `.opencode/command/` does exactly that).
 
 ### What the agent may and may not do
+
+The same posture in both adapters:
 
 | The agent… | Examples |
 | --- | --- |
 | **can do without asking** | Edit source files, run `just check`/`just test`/`just lint`, `pnpm exec vitest …`, `git add`, `git commit`, `git diff` |
 | **must ask you first** | Add or update packages (`pnpm add`), edit `package.json`, `migrations/`, `flags/`, `scripts/`, lint and build configs, `.dependency-cruiser.cjs`, run `dbmate`/`psql`, `git push`, create or merge pull requests |
-| **is never allowed** | Read `.env` files or `secrets/`, read your `~/.ssh`, edit `.github/workflows/`, lock files, `lefthook.yml` or its own `.claude/` settings and hooks, `curl`/`wget` |
+| **is never allowed** | Read `.env` files or `secrets/`, read your `~/.ssh`, edit `.github/workflows/`, lock files, `lefthook.yml` or its own adapter settings and hooks (`.claude/`, `opencode.jsonc`), `curl`/`wget` |
 
-The `verify-install` hook also refuses packages the project does not use on purpose (Next.js, Prisma, Drizzle, Redis,
-Clerk, …) and tells the agent what to use instead (ADR 0002).
+For Claude Code this lives in `.claude/settings.json` (plus the sandbox); for OpenCode in `opencode.jsonc`. The
+`verify-install` hook (Claude) and the deny list (both) also refuse packages the project does not use on purpose
+(Next.js, Prisma, Drizzle, Redis, Clerk, …) and say what to use instead (ADR 0002).
 
-If you really want the agent to change its own settings or hooks, start it with `ALLOW_CLAUDE_CONFIG_CHANGES=1 claude`,
-make the change, then restart normally.
+If you really want the agent to change its own settings or hooks, start Claude with
+`ALLOW_CLAUDE_CONFIG_CHANGES=1 claude`, make the change, then restart normally.
 
 ### Pick the process by the size of the task
 
-**Tier A: small (a typo, one function, under ~50 lines).** One precise prompt that names the file and the symptom:
+Not every change deserves a spec. The template's rule: **match the ceremony to the cost of being wrong.**
+
+**Tier A: small (a typo, one function, under ~50 lines).** One precise prompt that names the file and the symptom.
+No spec. The gate and a review still run.
 
 ```text
 In src/modules/notes/domain.ts, cleanTitle accepts a title made only of emoji
@@ -579,36 +600,38 @@ write the spec, then write it to plans/pin-notes.md with the acceptance tests an
 the files you expect to touch. Don't write code yet.
 ```
 
-Read and fix the plan. Then type `/clear` and:
+Read and fix the plan. Then start a **fresh** session (`/clear` in Claude Code; a new session in OpenCode) and:
 
 ```text
 Implement plans/pin-notes.md. Follow it exactly; if something in it is wrong,
 stop and tell me instead of improvising.
 ```
 
-**Tier C: risky or multi-session (database, auth, payments, public API).** Same as Tier B, plus: work in a separate
-worktree (`claude --worktree pin-notes`), use plan mode (press Shift+Tab until the mode line says *plan mode*), and
-write an ADR before changing a boundary.
+**Tier C: risky or multi-session (database, auth, payments, public API).** Same as Tier B, plus: work in a
+separate worktree or branch (`claude --worktree pin-notes`), use plan mode, and write an ADR before changing a
+boundary. For the full pipeline view of Tier B and C, see chapter 10.
 
 ### The loop for every task
 
 1. **Brief:** one complete message: what, which files, inputs and outputs, acceptance tests, and "ask at most 3
    questions if something is missing". Drip-feeding requirements over many messages costs much more.
 2. **Implement:** watch the first minute. Press Esc as soon as it goes the wrong way. After two failed corrections,
-   `/clear` and rewrite the brief.
-3. **Verify:** the Stop hook runs `just check`. Ask for evidence: "paste the last lines of `just check`".
-4. **Review:** `/code-review low`, then ask the reviewer subagent:
+   start a fresh session and rewrite the brief.
+3. **Verify:** Claude Code's Stop hook runs `just check` for you; in OpenCode, run it yourself. Ask for evidence:
+   "paste the last lines of `just check`".
+4. **Review:** `/code-review low` (Claude Code), then the reviewer subagent:
 
    ```text
    Use the reviewer subagent to compare this diff with plans/pin-notes.md:
    <paste the output of git diff main>
    ```
 
-   Fix only findings that affect correctness.
+   (OpenCode: start a fresh session and ask the agent to review the diff against the plan.) Fix only findings
+   that affect correctness.
 5. **Ship:** small conventional commits (`feat: pin notes`), a pull request whose body links the plan and shows the
    commands you ran.
-6. **Record:** if you corrected the agent twice for the same thing, add one line to `AGENTS.md` or a
-   `.claude/rules/*.md` file, or better, a lint rule or a test.
+6. **Record:** if you corrected the agent twice for the same thing, add one line to `AGENTS.md` or — better — a
+   lint rule or a test (chapter 9.4 writes the learning down either way).
 
 ### Good and bad prompts
 
@@ -624,31 +647,270 @@ write an ADR before changing a boundary.
 
 | Tool | How to use it |
 | --- | --- |
-| `/release` | Cuts a release on a clean, green `main` (chapter 13) |
-| `/study-reference <dir> [feature]` | Studies another repository read-only and writes a spec (chapter 10.11) |
+| pipelines (`pipelines/*.md`) | Brief a feature: intent-driven, reference-study, telemetry-driven (chapter 10) |
+| `just sync-tasks` | Print the dependency-ordered task queue from `plans/**/*.md` (chapter 11) |
+| `just distill` / `just prune-scratch` | End-of-feature ritual: update the registry, delete the scratchpad (chapter 9.5) |
+| `just metrics` | Print commit counts for the monthly metrics row (chapter 9.6) |
+| `/release` | Cuts a release on a clean, green `main` (chapter 16) |
+| `/study-reference <dir> [feature]` | Studies another repository read-only and writes a spec (chapter 13.11) |
 | reviewer subagent | "Use the reviewer subagent to compare the diff with plans/x.md" (read-only: give it the diff or the plan path) |
 | `/code-review low` | A quick correctness review of the current diff |
+| `scripts/agent-run.sh` | One unattended, budget-capped agent run with JSON validation (chapter 21) |
 | `.claude/rules/*.md` | Loaded automatically when the agent touches matching files (API, migrations, tests, modules, UI) |
 
 ### When the agent fights a gate
 
 - **It edits a test to make it pass:** reject. The test is the spec; ask why the behaviour changed.
 - **It wants a new package:** ask why the existing ones are not enough; check `pnpm view <name> time.created`.
-- **It wants `--no-frozen-lockfile`, `rm -rf`, `git push --force` or to edit `.claude/`:** the hooks refuse. If it is
-  really needed, you do it by hand.
+- **It wants `--no-frozen-lockfile`, `rm -rf`, `git push --force` or to edit its own adapter config:** the hooks
+  refuse. If it is really needed, you do it by hand.
 - **It says "all tests pass" without output:** run `just check` yourself.
 - **It ends with "UNVERIFIED":** the gate was still red after four tries. Read the last failure yourself
-  (chapter 17), then give it a precise brief.
+  (chapter 20), then give it a precise brief.
 
 ### Keep sessions cheap
 
-- One task per session; `/clear` between tasks is free.
+- One task per session; a fresh session between tasks is free.
 - Keep MCP servers off unless the task needs one.
 - Prefer path-scoped rules (`.claude/rules/`) and skills over adding lines to `AGENTS.md`.
+- Pipe long command output through `scripts/offload-context.mjs` (`<command> 2>&1 | node scripts/offload-context.mjs build`):
+  over 100 lines or 5 KiB it saves the full output to `.scratch/context-dumps/` and hands the agent a short summary
+  plus the file path instead.
 
 ---
 
-## 9. Worked example: build a "notes" feature from start to finish
+## 9. The knowledge layer: what the project remembers
+
+An AI agent forgets everything between sessions. Close the window, and the next session starts from zero: it
+re-reads `AGENTS.md`, greps around, and re-derives what you already told it last week. The knowledge layer is
+four small files that carry what should survive, plus one ritual that keeps them clean. Think of them as the
+project's notebook: short, dated, and read by both you and the agent.
+
+### 9.1 The four files
+
+| File | What it holds | When you write in it |
+| --- | --- | --- |
+| `docs/glossary.md` | The words that mean specific things here | When you invent or rename a term |
+| `docs/registry.md` (web projects) | Reusable pieces you built, with an ID and a scope | At the end of a feature (the distill ritual, 9.5) |
+| `docs/learnings.md` | What went wrong and what you learned | When something costs you more than a few minutes |
+| `docs/metrics.md` | One row per month: commits, first-pass CI rate, review rework, cost | Monthly, with `just metrics` |
+
+Everything in them is **data for the next session**. The agent greps them before inventing a new term or a new
+component; you read them before planning the next feature.
+
+### 9.2 `docs/glossary.md` — the project's dictionary
+
+When your project calls a group of students a "Cohort" and a set of lessons a "Track", the agent must use those
+words, not "UserGroup" or "LessonBundle". The glossary is the one place where those words are defined.
+
+```markdown
+| Term | Meaning |
+|---|---|
+| Cohort | A group of students that starts and finishes a Program together |
+| Track | An ordered set of Modules inside a Program |
+```
+
+**When to add a word:** the moment a term appears in a spec, a migration, or a route name. **How:** one row, one
+sentence, no implementation details. The agent is told (in `AGENTS.md`) to check the glossary before inventing a
+term — but it only helps if the words are actually there.
+
+### 9.3 `docs/registry.md` — the shelf of reusable pieces (web projects)
+
+Every web project grows reusable pieces: a colour palette, a named animation, a standard page layout, a card
+component. The registry gives each one an ID, a scope, and the file it lives in — so the next feature says "use
+`PAL-01` and `LAYOUT-02`" instead of re-describing them, and the agent finds them in one grep.
+
+Every entry gets one of four **scopes**, which answer "who is allowed to use this?":
+
+| Scope | Meaning | Lives in |
+| --- | --- | --- |
+| `GLOBAL` | Every page may use it | `src/styles/`, `src/components/ui/`, `src/lib/` |
+| `ARCHETYPE:<name>` | One *family* of pages (e.g. all marketing pages) | `src/components/archetypes/<name>/` |
+| `FEATURE:<name>` | One feature only | `src/features/<name>/` or `src/modules/<name>/` |
+| `ATOM` | A one-off inside a single file | next to the code that uses it |
+
+```markdown
+| ID | Name | Scope tier | Code seam | Notes |
+|---|---|---|---|---|
+| PAL-01 | Editorial Ink & Warm Paper | GLOBAL | src/styles/tokens.css | Accent emerald #0F766E |
+| LAYOUT-02 | Sticky hero + proof grid | ARCHETYPE:marketing | src/components/archetypes/marketing/Hero.tsx | Scroll-scrubbed |
+```
+
+**The rule that keeps it honest:** when a piece is used by a second, unrelated feature, it moves up one scope and
+the registry row changes. Nothing jumps straight to `GLOBAL` "just in case".
+
+### 9.4 `docs/learnings.md` — the scar tissue file
+
+When something costs you real time — a flaky test, a misleading error, a dependency that breaks the build — write
+one dated line. If you caught yourself correcting the **agent twice for the same thing**, that is the signal to
+write it here *and* consider promoting it into `AGENTS.md` (if every future session must know it) or into a lint
+rule (if it can be checked mechanically — chapter 8.7).
+
+```markdown
+- 2026-11-12: the sandbox hides .env* from shell commands, so `cat .env` fails by design; read .env.example instead.
+- 2026-11-19: Vitest browser tests need the Nix Chromium; a plain `npx playwright install` download is ignored.
+```
+
+Keep it short. A learning that applies to every future change does not belong here — it belongs in `AGENTS.md`
+or in a rule that `just check` enforces.
+
+### 9.5 The distill ritual (end of every feature)
+
+When a feature is done and merged, its raw material should not linger. The ritual has three commands:
+
+```console
+$ just distill                 # shows the diff of docs/registry.md and docs/glossary.md — you review and approve
+$ git add docs/ && git commit -m "docs: distill notes feature into the registry"
+$ just prune-scratch notes     # deletes .scratch/pipelines/notes/ — the raw harvest is gone
+```
+
+`just distill` prints the diff and stops. **You** decide whether the new registry rows are right; the agent never
+commits a distill on its own. After you approve, `just prune-scratch <slug>` garbage-collects the feature's
+ephemeral workspace (chapter 10 explains what lives there). The result: the registry holds what you actually
+built; the scratchpad holds nothing; nothing rotting, nothing bloating the next session's context.
+
+### 9.6 `just metrics` — the monthly ritual
+
+Once a month, run `just metrics` (it prints commits per month from git history) and fill one row of
+`docs/metrics.md`: first-pass CI rate (how often a PR went green without fixes), review-rework ratio (how much of
+a review was "change this back"), and cost per merged change (your harness shows the spend). Ten minutes a month.
+The numbers tell you whether the process is getting cheaper or driftier — throughput alone hides a growing
+review burden.
+
+---
+
+## 10. Pipelines: how to brief a feature
+
+A **pipeline** is a recipe for turning one kind of input — an idea in your head, someone else's website, a
+production error — into a **spec the agent can build from**. Three ship with every project, one file each in
+`pipelines/`. You (or the agent, told to "follow `pipelines/<name>.md`") run the recipe.
+
+### 10.1 The one rule: every pipeline ends in the same place
+
+No matter which pipeline you use, it must end with the same three files for the feature:
+
+```text
+plans/<slug>/spec.md     what we are building and how we will know it works (acceptance tests)
+plans/<slug>/plan.md     how it will be built: files, modules, seams
+plans/<slug>/tasks.md    the ordered list of tasks ("- [ ] T001: …"), the smallest steps that can each be checked
+```
+
+That trio is the **mediator contract**. Pipelines differ only in how they *produce* it. This is what keeps ten
+different ways of working from producing ten different kinds of mess: the repository only ever accepts work that
+arrives as a spec, a plan, and a task list — then the normal loop of chapter 8.4 takes over.
+
+### 10.2 `intent-driven` — you know what you want
+
+The default. You describe the feature; the agent interviews you, then writes the trio.
+
+```text
+I want users to pin a note so it stays at the top. Follow pipelines/intent-driven.md.
+Interview me until you can write the spec, then write plans/pin-notes/spec.md with
+acceptance tests, plan.md and tasks.md. Don't write code yet.
+```
+
+Use it for any feature you can describe in a paragraph. For a one-file fix, skip the pipeline entirely (Tier A,
+chapter 8.3).
+
+### 10.3 `reference-study` — borrow from somewhere else
+
+Two very different inputs, one pipeline:
+
+- **Borrowing a feature from another codebase** (an open-source app, your older project): the reference is
+  studied **read-only**, its feature list and licence recorded, and the spec is written in *your* stack's terms.
+  The reference is never installed, never merged, never copied wholesale.
+- **Harvesting a look** (a website whose palette, typography, motion or 3D you admire): the raw material is
+  collected into `.scratch/pipelines/<slug>/CATALOG.md` — a named menu of pieces (`PAL-*`, `FONT-*`, `LAYOUT-*`,
+  `ANIM-*`, `3D-*`) — you pick which to use at which scope (chapter 9.3), and the spec records the *adaptation*,
+  not a copy.
+
+```console
+$ git clone --depth 1 https://github.com/someone/inspiring-app ~/refs/inspiring
+```
+
+```text
+Follow pipelines/reference-study.md. Study ~/refs/inspiring read-only and list its
+features with licences. Then write plans/import-tags/spec.md for just the tag
+editing feature, translated to our stack. Never install or run the reference.
+```
+
+The scratchpad (`.scratch/pipelines/<slug>/`) is git-ignored and temporary — after the feature's distill ritual,
+`just prune-scratch <slug>` deletes it (chapter 9.5).
+
+### 10.4 `telemetry-driven` — production tells you what to fix
+
+A Sentry issue or a support ticket is a brief you didn't write. The pipeline turns it into the strictest possible
+loop: reproduce it as a **failing test** at the module's seam, fix the root cause, then ask "can this *class* of
+bug be made impossible?" — an ast-grep rule, a dependency-cruiser boundary, or a small ADR if the trade-off is
+hard to reverse.
+
+```text
+Follow pipelines/telemetry-driven.md. Sentry issue #4821: TypeError in
+src/modules/notes/store.ts when body is empty. Write the failing test first,
+then the fix, then tell me what rule would have prevented this class of bug.
+```
+
+### 10.5 Writing your own pipeline
+
+Copy `pipelines/_TEMPLATE.md` when you notice a repeated way of working (chapter 8.6: the third time you do
+something by hand, make it a recipe). A pipeline is one markdown file: when to use it, the steps, the prompts,
+and the note that it must end in `plans/<slug>/{spec,plan,tasks}.md`. Nothing in the template hard-codes the
+three shipped pipelines — they are conventions, not code.
+
+---
+
+## 11. The task graph: plans and their order
+
+A feature's `tasks.md` is more than a checklist — it is a small **dependency graph** that tells you (and the
+agent, and a second agent working in parallel) what can start now and what must wait.
+
+### 11.1 Writing tasks
+
+One checkbox per task, an ID, and — when it depends on another task — a `dep:` note:
+
+```markdown
+## Tasks
+- [ ] T001: migration for the notes table
+- [ ] T002: domain module (pure rule: cleanTitle) — dep: T001
+- [ ] T003: routes GET/POST/DELETE /api/v1/notes — dep: T002
+- [ ] T004: /notes page — dep: T003
+- [ ] T005: e2e: sign up, add, delete a note — dep: T004
+```
+
+Rules of thumb: every task is small enough to finish and verify in one session; every task names the files it
+touches; the acceptance tests from the spec are attached to the task that proves them (here, T005).
+
+### 11.2 `just sync-tasks` — see the queue
+
+```console
+$ just sync-tasks
+sync-tasks: 5 open of 5 tasks (dependency order; the first with no open deps is ready)
+  1. T001 (plans/pin-notes/tasks.md)
+  2. T002, dep: T001 (plans/pin-notes/tasks.md)
+  ...
+```
+
+The script reads every `plans/**/*.md`, orders the open tasks by their dependencies (a cycle is an error, not a
+hang), and prints the queue. Work the tasks top to bottom: one task, one fresh agent session (chapter 8.5),
+`just check` green, tick the box, next.
+
+### 11.3 Optional: mirroring to Beads
+
+If you install the Beads CLI (`pnpm add -g @beads/bd` — it will ask), `just sync-tasks --bd` also creates the
+tasks and their dependencies in Beads' local task graph, which gives you `bd ready` (what is unblocked) and
+easier book-keeping across many features. **Without Beads nothing changes**: markdown stays the source of truth,
+and the script says so and exits cleanly. The template never requires Beads.
+
+### 11.4 Working in parallel
+
+When two open tasks touch **disjoint files** (say T001 the migration and, in another feature, a docs task), you
+can run them in parallel lanes: one agent session per worktree (`claude --worktree <slug>`), each implementing
+its own task, both ending in their own pull request. Keep it to two lanes until the merge pain teaches you
+otherwise; the gate, not hope, resolves the race.
+
+---
+
+## 12. Worked example: build a "notes" feature from start to finish
 
 This chapter builds a real feature, **private notes**: a signed-in user can add a note, see their notes, and delete
 them, and nobody else can see them. It touches every layer: a database table, a module with domain logic, three API
@@ -710,7 +972,7 @@ CREATE INDEX notes_user_id_created_at_idx ON notes (user_id, created_at DESC);
 Why it looks like this:
 
 - `-- migrate:up` / `-- migrate:down` is dbmate's format. The down part stays empty on purpose: in production you
-  never roll a schema back; you fix forward (chapter 14).
+  never roll a schema back; you fix forward (chapter 17).
 - `lock_timeout` and `statement_timeout` stop a migration from blocking the live database for long.
 - **Expand-only:** it only adds a table. Squawk (`just squawk`, part of `just lint`) checks every changed migration
   for unsafe operations.
@@ -1368,7 +1630,7 @@ wrote …/openapi.json
 ```
 
 `just check` compares it with `origin/main` using oasdiff. Adding routes is fine ("No breaking changes to report, but
-the specs are different"); removing or renaming one would fail (chapter 10.12).
+the specs are different"); removing or renaming one would fail (chapter 13.12).
 
 ### 9.13 The web page
 
@@ -1792,7 +2054,7 @@ CI runs `just ci` and `just e2e`; when it is green and you approve, the merge qu
 
 ---
 
-## 10. Recipes for common tasks
+## 13. Recipes for common tasks
 
 Each recipe lists the files to touch in order. When you ask Claude to do one, name the recipe's steps in your brief.
 
@@ -2025,7 +2287,7 @@ $ pnpm dlx shadcn@4.23.0 add dialog
 
 Use `react-aria-components` only for hard widgets (comboboxes, date pickers, grids). Every new component file under
 `src/ui/components` needs a browser test (`*.test.tsx`, rendered in real Chromium with `vitest-browser-react`, queried
-by role and label); see `sign-in-gate.test.tsx` in chapter 9.
+by role and label); see `sign-in-gate.test.tsx` in chapter 12.
 
 ### 10.10 Add a dependency
 
@@ -2127,7 +2389,7 @@ const response = await fetch("/api/v1/ai/summarize", {
 
 ---
 
-## 11. Testing: what to test, where, and how
+## 14. Testing: what to test, where, and how
 
 ### The kinds of tests
 
@@ -2211,7 +2473,7 @@ for `src/` and 80 for `src/domain`. It runs in `just ci` and every Monday in CI;
 
 ---
 
-## 12. Configuration and secrets
+## 15. Configuration and secrets
 
 ### Locally: nothing to set up
 
@@ -2272,7 +2534,7 @@ files. gitleaks and TruffleHog scan the history in `just ci`.
 
 ---
 
-## 13. Shipping: CI, releases and deployment
+## 16. Shipping: CI, releases and deployment
 
 ### What runs on GitHub
 
@@ -2283,7 +2545,7 @@ files. gitleaks and TruffleHog scan the history in `just ci`.
 | `supply-chain.yml` | Pull requests, the merge queue, pushes to `main`, Mondays | Vulnerability scans (OSV-Scanner, Grype), an SBOM, licence checks, dependency review |
 | `migrations.yml` | Pull requests that touch `migrations/` | Squawk |
 | `deploy.yml` | Every push to `main` | Gates, then (once switched on) image, migrations, deploy, smoke test |
-| `template-update.yml` | Mondays 07:00 UTC | Opens a pull request that brings the template's newest `main` commit (chapter 15) |
+| `template-update.yml` | Mondays 07:00 UTC | Opens a pull request that brings the template's newest `main` commit (chapter 18) |
 
 ### Switch on deployment
 
@@ -2331,7 +2593,7 @@ and the web bundle is loaded (readiness). Point your uptime monitor at both.
 
 ---
 
-## 14. When something goes wrong in production
+## 17. When something goes wrong in production
 
 The full runbook is `docs/runbooks/rollback.md`. The order is always **flag first, app second, data last**: each step
 is faster and safer than the next, and most incidents end at step 2.
@@ -2365,7 +2627,7 @@ backup.
 
 ---
 
-## 15. Keeping projects up to date with the template
+## 18. Keeping projects up to date with the template
 
 ### The automatic way
 
@@ -2380,7 +2642,7 @@ When the job fails, read the `::error::` line under Copier's output; it names th
 | The log says | Do this |
 | --- | --- |
 | `The template repository has no main branch` | The template's `main` was renamed or deleted: push it again (or rename the default branch back to `main`), then run the job again |
-| `The template commit this project records (...) is no longer in the template repository` | The template's `main` was rewritten (force-push, rebase, amend), or the project was made from a branch that is gone: push the commit back as `keep-<sha>` (the line gives the command; delete that branch once every project has updated past it), or run the `recopy` command the line prints, in a clean checkout (chapter 17) |
+| `The template commit this project records (...) is no longer in the template repository` | The template's `main` was rewritten (force-push, rebase, amend), or the project was made from a branch that is gone: push the commit back as `keep-<sha>` (the line gives the command; delete that branch once every project has updated past it), or run the `recopy` command the line prints, in a clean checkout (chapter 20) |
 | `The template's main counts as older than this project's template commit ...` | `main` was reset behind the project's commit, or the project was made with the old script from a newer tag or another branch: push `main` forward, or run the `recopy` command the line prints |
 | `Pushing the update branch failed ...` | Read git's message just above it. `refusing to allow ... to create or update workflow`: the `GH_TOKEN_FOR_UPDATES` token lacks the `workflow` scope (chapter 5.4). `[rejected] ... (non-fast-forward)`: the update branch of an earlier run that day still exists; merge or close its pull request, delete the branch, and run the job again |
 
@@ -2418,7 +2680,7 @@ against a fresh project with the same answers instead of working through the fil
 
 ---
 
-## 16. Changing the template itself
+## 19. Changing the template itself
 
 You change the template in this repository; projects pick the change up through `copier update`.
 
@@ -2468,7 +2730,7 @@ the previous tag, on every pull request.
 
 ---
 
-## 17. Troubleshooting: what each failure means and how to fix it
+## 20. Troubleshooting: what each failure means and how to fix it
 
 ### Gate failures
 
@@ -2480,7 +2742,7 @@ the previous tag, on every pull request.
 | ESLint `@typescript-eslint/...` errors | Unsafe or sloppy TypeScript (`any`, unhandled promises, non-exhaustive `switch`) | Fix the code. A suppression comment needs `reason:`; an ast-grep rule enforces it |
 | `Test has no assertions  vitest/expect-expect` | A test without `expect` | Add assertions; for properties use `test.prop` |
 | ast-grep `no-process-env-outside-env` | `process.env` read outside `src/env.ts` | Add the key to `src/env.ts`, import `env` |
-| ast-grep `no-start-server-endpoints` | A TanStack Start server function or server route | Write a Hono route instead (chapter 10.1) |
+| ast-grep `no-start-server-endpoints` | A TanStack Start server function or server route | Write a Hono route instead (chapter 13.1) |
 | ast-grep `no-vi-mock-of-repo-module` | `vi.mock` of a file in this repository | Pass a small real implementation of the port |
 | knip `Unused files / exports / dependencies` | Dead code | Delete it, or stop exporting it |
 | dependency-cruiser `domain-independent`, `ui-not-server`, `app-not-infra-or-ui`… | An import breaks a layer rule | Move the code to the right layer, or go through a port |
@@ -2492,11 +2754,11 @@ the previous tag, on every pull request.
 | `db/schema.sql … out of date` or `schema.gen.ts is out of date` | Migrations changed | `just db-generate` |
 | `src/ changed without docs/README/CHANGELOG` | docs-drift | Add a changeset (`pnpm changeset`) or a docs change, or `#no-docs <reason>` in the commit body |
 | `architecture boundary changed without an ADR` | `.dependency-cruiser.cjs` changed | Add `docs/decisions/NNNN-….md` in the same change |
-| oasdiff lists breaking changes | You removed or renamed part of the API | Make it additive (chapter 10.12), or `#api-break <reason>` |
+| oasdiff lists breaking changes | You removed or renamed part of the API | Make it additive (chapter 13.12), or `#api-break <reason>` |
 | Squawk reports a rule | An unsafe migration | Follow its advice (e.g. `CREATE INDEX CONCURRENTLY` with `transaction:false`) |
 | Coverage threshold not met | A file has too few tests | Test the uncovered branches the report shows (`reports/coverage/`) |
 | Telemetry test: a status is not in the documented list | A route answered a status its OpenAPI entry does not list | Document that response in `createRoute` |
-| Access matrix: an operation is not declared | A new route without a matrix row | Add the row (chapter 9.11) |
+| Access matrix: an operation is not declared | A new route without a matrix row | Add the row (chapter 12.11) |
 | Mutation score below the break threshold (`just ci`) | Tests run the code but do not check it | Strengthen the assertions where mutants survived (`reports/mutation/`) |
 | Lighthouse below 0.95 (`just ci`, web) | Accessibility, SEO or best-practice regression | Read the reports in `reports/lighthouse/` and fix the reported audits |
 | size-limit over budget | The JavaScript or CSS bundle grew too much | Split code, drop a heavy dependency, or raise the budget in `.size-limit.json` deliberately |
@@ -2520,7 +2782,56 @@ the previous tag, on every pull request.
 
 ---
 
-## 18. Glossary
+## 21. Unattended runs and measuring the process
+
+### 21.1 The idea
+
+Some work should not need you watching: batch migrations overnight, a nightly refactor pass, the weekly
+dependency bump. The template ships the pieces for running the agent **unattended** — with a budget, inside a
+sandbox, in CI — and for measuring whether that is actually working.
+
+### 21.2 `scripts/agent-run.sh` — one unattended run
+
+```console
+$ nix develop .#quiet -c bash scripts/agent-run.sh --max-budget-usd 5 \
+    "Run just check on the current tree. Fix only what is red. Paste the last lines of the run as evidence."
+```
+
+What it does: runs `claude --bare -p` (no hooks, skills, plugins or `CLAUDE.md` — the repository's own settings
+files still apply), validates that the output parses as JSON, and fails when it does not. `--schema` (optional)
+hands Claude a JSON schema to constrain the answer. Run it inside the dev shell or a container — **never on your
+host** (chapter 15.4): an unattended agent gets the same deny list and sandbox as any other run, plus a hard
+budget.
+
+### 21.3 `gate-flake-rate.yml` — is the gate trustworthy?
+
+```yaml
+# .github/workflows/gate-flake-rate.yml — Saturdays, before template-test.
+# Renders a fresh default-web project and runs its full `just check` three times.
+```
+
+A gate that passes and fails on identical code is a flaky gate, and agents cannot work against one. The workflow
+reports the flake rate in the job summary; any disagreement between the three runs fails the job.
+
+### 21.4 `golden-prompt.yml` — the acceptance test for the vibe process
+
+Weekly (when the `ANTHROPIC_API_KEY` secret exists; otherwise a `::notice::` and a clean skip): render a fresh
+project, give the agent the documented worked-example brief (chapter 12) with a budget cap, and require the
+project's full gate to be green afterwards. This is the template's own pass/fail signal that a from-scratch
+agent run can actually work here.
+
+### 21.5 `docs/metrics.md` — the monthly ledger
+
+| Month | Commits | First-pass CI rate | Review-rework ratio | $ per merged change |
+|---|---|---|---|---|
+| | | | | |
+
+`just metrics` prints the commit counts; the other columns come from your CI and review tools. Read the ratios
+together: throughput alone rewards what inflates review burden.
+
+---
+
+## 22. Glossary
 
 | Word | Meaning here |
 | --- | --- |
@@ -2534,6 +2845,7 @@ the previous tag, on every pull request.
 | **Copier** | The generator that renders this template and later updates projects |
 | **CSP / nonce** | Content Security Policy: the browser runs only scripts that carry the per-request nonce |
 | **CSRF** | Cross-site request forgery; the guard accepts browser writes only from `APP_URL` |
+| **distill** | End-of-feature ritual: promote what you built into `docs/registry.md`/`docs/glossary.md` (you approve the diff), then delete the scratchpad |
 | **dbmate** | Applies the SQL files in `migrations/` in order |
 | **dependency-cruiser** | Checks who may import whom (the layer and module rules) |
 | **direnv / nix-direnv** | Load the project's Nix shell automatically when you `cd` into the folder |
@@ -2542,9 +2854,12 @@ the previous tag, on every pull request.
 | **expand / contract** | Database changes in two releases: first add, later remove |
 | **flag / kill switch** | A switch in `flags/flags.json` that turns a feature (or all writes) off without a deploy |
 | **gate** | `just check`: the set of checks that decides when work is done |
+| **harness** | The AI coding agent and its adapter: Claude Code (`.claude/`), OpenCode (`.opencode/`), or both |
 | **Hono** | The web server framework for the API |
 | **hook (Claude Code)** | A script Claude Code runs before or after tool calls; `gates.sh` runs the gate when the agent stops |
 | **just** | The command runner; `justfile` lists the commands |
+| **knowledge layer** | The four files that outlive a session: `docs/glossary.md`, `docs/registry.md`, `docs/learnings.md`, `docs/metrics.md` |
+| **mediator contract** | The rule that every pipeline ends in `plans/<slug>/{spec,plan,tasks}.md` — the same three files whichever way you briefed it |
 | **knip** | Finds unused files, exports and dependencies |
 | **Kysely** | The typed SQL query builder |
 | **lefthook** | Runs checks on `git commit` and `git push` |
@@ -2553,29 +2868,35 @@ the previous tag, on every pull request.
 | **MSW** | Mock Service Worker: fakes outside HTTP services in tests |
 | **mutation testing** | Changes your code on purpose to check that the tests notice (Stryker) |
 | **Nix flake** | The file that pins the whole toolchain (`flake.nix` + `flake.lock`) |
+| **offload** | Saving long command output to `.scratch/context-dumps/` and giving the agent a summary instead (`scripts/offload-context.mjs`) |
 | **OpenAPI** | The machine-readable description of the API (`openapi.json`) |
 | **Paraglide** | Compiles `messages/*.json` into typed `m.key()` functions |
+| **pipeline** | A recipe in `pipelines/` for turning one kind of input (an idea, a reference, a bug report) into a spec |
 | **pg-boss** | Background jobs and cron, stored in Postgres |
 | **port / adapter** | An interface the app needs (port, in `src/app/ports.ts`) and its real implementation (adapter, in `src/infra`) |
+| **registry** | `docs/registry.md`: the shelf of reusable pieces with an ID and a scope (web projects) |
 | **Renovate** | A bot that opens pull requests to update dependencies |
 | **Result** | A return value that is either `ok(value)` or `err(error)` (neverthrow), used for expected failures |
+| **scratchpad** | `.scratch/pipelines/<slug>/`: the git-ignored, temporary workspace of a pipeline, deleted by `just prune-scratch` |
+| **scope tier** | Who may use a registry piece: `GLOBAL` < `ARCHETYPE:<name>` < `FEATURE:<name>` < `ATOM` |
 | **sandbox** | Claude Code's isolation of shell commands (bubblewrap on Linux) |
 | **SSE** | Server-Sent Events: a one-way live stream from server to browser |
+| **task graph** | The `dep:`-linked task list in `plans/<slug>/tasks.md`; `just sync-tasks` prints it in dependency order |
 | **TanStack Start** | The React framework for the web pages (server-side rendering) |
 | **Zod** | Schemas that validate data at runtime and give TypeScript types |
 
 ---
 
-## 19. Cheat sheet
+## 23. Cheat sheet
 
 ```text
 NEW PROJECT          cd ~/dev/vibe-forge && ./new-project.sh ~/dev/my-app
 TEMPLATE CHANGE      branch → PR → template-test green → merge into main   (projects always follow main)
 TRY IT UNMERGED      ./new-project.sh --local /tmp/try-it                    (throw it away afterwards)
-OPEN IT              cd ~/dev/my-app, then claude         (two commands; first time: /sandbox)
+OPEN IT              cd ~/dev/my-app, then claude — or opencode   (two commands; first time: /sandbox)
 DEVELOP              just db-up && pnpm dev               → http://127.0.0.1:3000
 EMAIL LOCALLY        just mail  +  MAILPIT_URL=http://127.0.0.1:8025 pnpm dev
-DONE?                just check                           (the agent's Stop hook runs it too)
+DONE?                just check                           (Claude's Stop hook runs it too; in OpenCode run it yourself)
 BEFORE A RELEASE     just ci && just e2e
 ONE TEST FILE        pnpm exec vitest run src/modules/notes/routes.test.ts
 FORMAT               pnpm format
@@ -2583,13 +2904,20 @@ NEW MIGRATION        just db-new add_widgets  →  edit  →  just db-generate
 AFTER ROUTE CHANGE   pnpm openapi
 AFTER SETTING CHANGE pnpm env:example
 NEW DEPENDENCY       pnpm view <pkg> time.created version  →  pnpm add <pkg>
-BORROW A FEATURE     claude --add-dir ~/refs/<repo>  →  /study-reference ~/refs/<repo> [feature]
+BRIEF A FEATURE      follow pipelines/intent-driven.md   (or reference-study.md, telemetry-driven.md)
+TASK QUEUE           just sync-tasks                      (+ --bd when the Beads CLI is installed)
+END OF FEATURE       just distill → approve diff → commit → just prune-scratch <slug>
+LONG OUTPUT          <cmd> 2>&1 | node scripts/offload-context.mjs <label>
+METRICS (MONTHLY)    just metrics  →  fill one row of docs/metrics.md
+UNATTENDED RUN       nix develop .#quiet -c bash scripts/agent-run.sh --max-budget-usd 5 "<task>"
+BORROW A FEATURE     git clone --depth 1 <repo> ~/refs/<name>  →  /study-reference ~/refs/<name> [feature]
 RELEASE NOTES        pnpm changeset          RELEASE   /release (in Claude, on green main)
 UPDATE FROM TEMPLATE nix run --inputs-from . nixpkgs#copier -- update --trust --defaults --conflict rej --vcs-ref main
 SECRETS              sops secrets/dev.enc.env   ·   sops exec-env secrets/dev.enc.env 'pnpm dev'
 INCIDENT             flag off (flags/flags.json)  →  redeploy last good image by digest  →  data last
 
 FEATURE CHECKLIST
+  [ ] pipeline ran → plans/<slug>/{spec,plan,tasks}.md exist
   [ ] migration (expand-only) + just db-generate
   [ ] domain function + tests (incl. a property test)
   [ ] schemas with examples
@@ -2602,4 +2930,5 @@ FEATURE CHECKLIST
   [ ] e2e flow + page in the axe list
   [ ] behind a flag if risky   [ ] changeset
   [ ] just check  ·  just e2e  ·  reviewer subagent  ·  small PR
+  [ ] distill ritual: registry/glossary updated, scratchpad pruned
 ```
