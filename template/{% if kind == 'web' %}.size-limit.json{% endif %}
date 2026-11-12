@@ -1,0 +1,14 @@
+[
+	{
+		"name": "client JavaScript (all chunks, brotli)",
+		"path": "dist/client/assets/*.js",
+		"limit": "300 kB",
+		"brotli": true
+	},
+	{
+		"name": "client CSS (brotli)",
+		"path": "dist/client/assets/*.css",
+		"limit": "15 kB",
+		"brotli": true
+	}
+]

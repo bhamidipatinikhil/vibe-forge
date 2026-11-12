@@ -1,0 +1,46 @@
+# {{ project_name }}
+
+## Commands (run inside the Nix shell; direnv loads it)
+- Gate (what "done" means): `just check`   — the Stop hook and CI run exactly this
+- One test file: `pnpm exec vitest run path/to/file.test.ts` (tests start their own Postgres; nothing to run first)
+- Typecheck: `pnpm exec tsc --noEmit` · Lint: `pnpm exec biome ci . && pnpm exec eslint .`
+- Mutation score (slow): `just mutation` · Security suite: `just ci`{% if with_playwright %} · Browser end to end: `just e2e`{% endif %}
+- Database: new migration `just db-new <name>`, then `just db-generate` (rewrites `db/schema.sql` and `src/infra/db/schema.gen.ts`)
+- New dependency: `pnpm view <name> time.created version` first, then `pnpm add <name>` (you will be asked to confirm)
+
+## Conventions
+- Layers: `src/domain` (pure) ← `src/schemas` (Zod; may import `src/domain` only) ← `src/app` (HTTP; reaches the world through `src/app/ports.ts`) ← `src/infra` (implements the ports){% if kind == 'web' %}; `src/ui` (TanStack Start) imports none of them and calls the HTTP API (`src/ui/lib/api.ts`){% endif %}; a product area with its own routes and tables is a module in `src/modules/<name>/`, entered through its `index.ts` (`.claude/rules/modules.md`). dependency-cruiser enforces this (`.dependency-cruiser.cjs`; changing it needs an ADR in the same change).
+- Every endpoint is a Hono route with a Zod schema, an OpenAPI entry (`pnpm openapi`), a test and an access-matrix row{% if kind == 'web' %}; never a TanStack Start server function or server route (ast-grep bans them){% endif %}. Breaking `openapi.json` against `origin/main` fails `just check` unless a commit says `#api-break <reason>`.
+- Validate every external input with Zod; `JSON.parse`/`fetch().json()` return `unknown` on purpose (ts-reset). Configuration comes from `src/env.ts`{% if kind == 'web' %} (browser: `src/ui/public-env.ts`){% endif %} only; add a key there with `.meta()` and run `pnpm env:example`.
+- Expected failures return `Result` (neverthrow); unexpected ones throw `Error` subclasses; `catch (e: unknown)`; never an empty catch.
+- Every Promise is awaited, returned or `void`ed; every `switch` on a union is exhaustive; no `any`, no `!`, no suppression comment without `reason:`.
+- Tests: assert behaviour; real Postgres, never a mocked repository; mock only process boundaries (HTTP via MSW, time via fake timers); never `vi.mock` an in-repo module; no `.only`/`.skip`.
+- Functions ≤ cognitive complexity 15, files ≤ 300 lines, no duplicated block ≥ 5 lines: extract instead.
+- Remove what you stop using in the same change (knip must stay clean). Update `docs/`, README or CHANGELOG in the same change as `src/` (or write `#no-docs <reason>` in the commit body).
+- Migrations are expand-only dbmate SQL in `migrations/`, linted by Squawk; contract steps ship in a later release.
+- Risky features ship behind a flag in `flags/flags.json`; the runbook's first step is turning it off.
+- Commits: conventional (`feat:`, `fix:` …), small (~100–400 lines); run `just check` before declaring a task done and paste its last lines as evidence.
+
+## Gotchas
+- `tsc` is TypeScript 6.0.3 and pnpm is 11 on purpose (TS 7 and pnpm 12 are held back: docs/decisions/0002-stack.md); do not bump them.
+- Not used, on purpose (the install hook denies them): Next.js, Prisma, Drizzle, Redis/Valkey, Meilisearch, Storybook, Turborepo/Nx, Inngest/Trigger.dev, Unleash, Clerk. The ADR says what to use instead.
+{%- if with_playwright %}
+- `@playwright/test`{% if kind == 'web' %} and `playwright`{% endif %} must equal `$PLAYWRIGHT_VERSION` (nixpkgs driver); `just doctor` checks.
+{%- endif %}
+{%- if kind == 'web' %}
+- `src/ui/routeTree.gen.ts`, `src/ui/paraglide/` and `.content-collections/` are generated (`just gen`, git-ignored); never edit them. UI strings live in `messages/*.json`.
+- The CSP is enforced with a per-request nonce: no inline scripts or `style` tags you write by hand; use Tailwind classes.
+{%- endif %}
+- Secrets are never on disk in plaintext; run the app with `sops exec-env` / `op run`. `.env.example` is the documented key list: read it with the Read tool (the sandbox hides every `.env*` file except `.env.example` from shell commands).
+- Lock files (`flake.lock`, `pnpm-lock.yaml`) come from the template, re-locked by the first install in `new-project.sh` when the answers changed `package.json`, and are changed by Renovate and humans only.
+{%- if harness in ['claude', 'both'] %}
+- Start Claude Code from the dev shell (`direnv allow`, or `nix develop -c claude`): the hooks need `jq` and `nix` and the sandbox needs bubblewrap + socat from the flake. Without them `guard.sh` fails closed and every Read/Edit/Write/Grep/Glob/Bash call is blocked.
+- The Stop hook (`.claude/hooks/gates.sh`) runs `just check` whenever the tree is dirty or HEAD is not the last commit it verified (`refs/vibe/gate-verified`), so the first Stop of a session on a new or human-made commit runs it once; a red gate holds the turn open for at most 4 attempts, then the turn ends with an "UNVERIFIED" warning.
+- Sandbox trade-offs: `allowLocalBinding: true` lets sandboxed commands listen on ports on macOS (`pnpm dev`, `just e2e`; on Linux every sandboxed command has a private localhost and the key has no effect) and also lets an unauthenticated localhost service act for the command. `gh pr view` / `gh issue view` run outside the sandbox without a prompt (`~/.config/gh` is hidden from sandboxed commands, so `gh` cannot authenticate inside it); every other `gh` command prompts.
+- Agent policy is locked: `.claude/hooks/guard-config.sh` rejects edits to settings, hooks and skills, silently. To change them on purpose, start Claude with `ALLOW_CLAUDE_CONFIG_CHANGES=1 claude`, make the change, then restart without it. While the lock is on, "don't ask again" approvals may not take effect in this session (they are settings writes too); re-approve after restarting with `ALLOW_CLAUDE_CONFIG_CHANGES=1`.
+- `.claude/settings.json` needs Claude Code ≥ 2.1.295 (`onFailure: "block"`, `blockReadsOutsideWorkingDirectories`); the flake's `nixpkgs-agents` input provides it. Older builds ignore both keys silently.
+{%- endif %}
+{%- if harness in ['opencode', 'both'] %}
+- Start OpenCode from the dev shell (`direnv allow`, or `nix develop -c opencode`; OpenCode itself comes from your PATH, not the flake): it reads this `AGENTS.md` and `docs/glossary.md` automatically. OpenCode has no Stop hook, so nothing enforces the gate for you — run `just check` before you declare a task done.
+- Permissions live in `opencode.jsonc` (same posture as `.claude/settings.json` where both are rendered): installs, `git push`, `rm -rf`, `sudo`, `curl`/`wget`, `pnpm add`/`install`/`update`/`dlx`, `npx`, `dbmate`, `psql` and `nix flake update` ask; secrets (`~/.ssh`, `.env`, `~/.config/sops`, `~/.config/gh`, `~/.npmrc`) are hidden from sandboxed commands.
+{%- endif %}

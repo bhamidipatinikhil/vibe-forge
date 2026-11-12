@@ -1,0 +1,8 @@
+id: no-start-server-endpoints
+valid:
+  - "export const Route = createFileRoute('/')({ component: Home, loader: () => load() })"
+  - "const x = { server: true }"
+invalid:
+  - "const getUser = createServerFn({ method: 'GET' }).handler(() => user)"
+  - "export const Route = createFileRoute('/api/x')({ server: { handlers: { GET: () => new Response('') } } })"
+  - "export const ServerRoute = createServerFileRoute('/api/x').methods({ GET: () => new Response('') })"

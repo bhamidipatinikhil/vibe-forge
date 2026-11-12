@@ -1,0 +1,73 @@
+// src/app/ports.ts — what the HTTP layer needs from the outside world. src/infra implements these; tests pass small
+// real implementations instead of mocking modules (AGENTS.md: never vi.mock an in-repo module).
+import type { OpenAPIHono } from "@hono/zod-openapi";
+{%- if kind == 'web' %}
+import type { MiddlewareHandler } from "hono";
+{%- endif %}
+
+/** The signed-in principal, as far as the HTTP layer needs to know it. */
+export interface Session {
+	/** Stable user id (better-auth `users.id`). */
+	readonly userId: string;
+	/** Primary email address. */
+	readonly email: string;
+	/** Display name. */
+	readonly name: string;
+}
+
+/** Authentication: the better-auth handler plus a session lookup. */
+export interface AuthPort {
+	/** Serves every `/api/auth/*` request. */
+	readonly handler: (request: Request) => Promise<Response>;
+	/**
+	 * Resolves the session carried by the request headers (cookie).
+	 * @returns The session, or `null` for anonymous callers.
+	 */
+	readonly getSession: (headers: Headers) => Promise<Session | null>;
+}
+
+/** Boolean feature flags and kill switches (OpenFeature). */
+export interface FlagsPort {
+	/**
+	 * Evaluates a boolean flag.
+	 * @param key - Flag key as defined in `flags/flags.json`.
+	 * @param fallback - Value when the flag is missing or the provider fails.
+	 */
+	readonly isEnabled: (key: string, fallback: boolean) => Promise<boolean>;
+}
+
+/** Where unexpected errors go besides the log (Sentry when configured). */
+export interface ErrorReporter {
+	/**
+	 * Reports an unexpected error.
+	 * @param error - What was thrown.
+	 * @param context - Request context to attach.
+	 */
+	readonly capture: (
+		error: unknown,
+		context: { readonly path: string; readonly traceId?: string },
+	) => void;
+}
+
+/** The variables Hono's secure-headers middleware sets on the request context. */
+export interface SecureHeadersVariables {
+	/** Per-request CSP nonce (set when the policy uses `NONCE`). */
+	secureHeadersNonce?: string;
+}
+
+/** Hono environment of the application: the request variables every handler may read. */
+export interface AppEnv {
+	/** Request-scoped values set by middleware. */
+	Variables: SecureHeadersVariables;
+}
+
+/** The application type every route module registers on. */
+export type App = OpenAPIHono<AppEnv>;
+{%- if kind == 'web' %}
+
+/**
+ * Serves every request the API did not match (the TanStack Start app and its
+ * assets). Registered after all API routes; it can read the CSP nonce.
+ */
+export type WebHandler = MiddlewareHandler<AppEnv>;
+{%- endif %}

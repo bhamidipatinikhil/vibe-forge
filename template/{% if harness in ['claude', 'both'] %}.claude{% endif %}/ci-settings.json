@@ -1,0 +1,242 @@
+{
+	"$schema": "https://json.schemastore.org/claude-code-settings.json",
+	"permissions": {
+		"allow": [
+			"Bash(just check)",
+			"Bash(just typecheck)",
+			"Bash(just lint)",
+			"Bash(just test)",
+			"Bash(just deadcode)",
+			"Bash(just arch)",
+			"Bash(just dup)",
+			"Bash(just docs)",
+			"Bash(just doctor)",
+			"Bash(just ci)",
+			"Bash(just mutation)",
+			"Bash(just sast)",
+			"Bash(just secrets)",
+			"Bash(just licenses)",
+			"Bash(just e2e)",
+			"Bash(just bench)",
+			"Bash(just gen)",
+			"Bash(just env-check)",
+			"Bash(just db-check)",
+			"Bash(just shellcheck)",
+			"Bash(just squawk)",
+			"Bash(just api-diff)",
+			"Bash(just build)",
+			"Bash(just size)",
+			"Bash(just lighthouse)",
+			"Bash(just load)",
+			"Bash(just db-up)",
+			"Bash(just db-down)",
+			"Bash(just db-generate)",
+			"Bash(pnpm exec tsx scripts/gen.ts *)",
+			"Bash(pnpm exec tsx scripts/env-example.ts *)",
+			"Bash(pnpm exec tsx scripts/db.ts *)",
+			"Bash(pnpm exec tsx scripts/with-pg.ts *)",
+			"Bash(pnpm exec size-limit *)",
+			"Bash(squawk *)",
+			"Bash(shellcheck *)",
+			"Bash(oasdiff *)",
+			"Bash(pnpm exec tsc *)",
+			"Bash(pnpm exec biome *)",
+			"Bash(pnpm exec eslint *)",
+			"Bash(pnpm exec ast-grep *)",
+			"Bash(pnpm exec vitest *)",
+			"Bash(pnpm exec knip *)",
+			"Bash(pnpm exec depcruise *)",
+			"Bash(pnpm exec jscpd *)",
+			"Bash(pnpm exec typedoc *)",
+			"Bash(pnpm exec tsx scripts/emit-openapi.ts *)",
+			"Bash(pnpm exec playwright *)",
+			"Bash(pnpm exec stryker *)",
+			"Bash(pnpm run *)",
+			"Bash(pnpm test *)",
+			"Bash(pnpm lint *)",
+			"Bash(pnpm typecheck *)",
+			"Bash(pnpm build *)",
+			"Bash(pnpm view *)",
+			"Bash(git status *)",
+			"Bash(git diff *)",
+			"Bash(git log *)",
+			"Bash(git add *)",
+			"Bash(git commit *)",
+			"Bash(git worktree list *)",
+			"Bash(gh pr view *)",
+			"Bash(gh issue view *)",
+			"WebFetch(domain:code.claude.com)",
+			"WebFetch(domain:pnpm.io)",
+			"WebFetch(domain:docs.npmjs.com)"
+		],
+		"deny": [
+			"Read(.env)",
+			"Read(.env.*)",
+			"Read(!.env.example)",
+			"Read(secrets/**)",
+			"Read(**/*.pem)",
+			"Read(**/*.key)",
+			"Read(~/.ssh/**)",
+			"Read(~/.aws/**)",
+			"Read(~/.config/sops/**)",
+			"Read(~/.config/gh/**)",
+			"Read(~/.npmrc)",
+			"Read(~/.netrc)",
+			"Read(./**/dist/**/*)",
+			"Read(./**/build/**/*)",
+			"Read(./**/*.generated.*)",
+			"Edit(.env)",
+			"Edit(.env.*)",
+			"Edit(!.env.example)",
+			"Edit(secrets/**)",
+			"Edit(.claude/settings.json)",
+			"Edit(.claude/settings.local.json)",
+			"Edit(.claude/hooks/**)",
+			"Edit(.mcp.json)",
+			"Edit(lefthook.yml)",
+			"Edit(.github/workflows/**)",
+			"Edit(flake.lock)",
+			"Edit(pnpm-lock.yaml)",
+			"Edit(.copier-answers.yml)",
+			"Bash(curl *)",
+			"Bash(wget *)",
+			"Bash(sudo *)",
+			"Bash(git add -f *)",
+			"Bash(git add --force *)",
+			"Bash(git push --force *)",
+			"Bash(git push -f *)",
+			"Bash(git push * --force*)",
+			"Bash(git push * -f*)",
+			"Bash(git push * +*)",
+			"Bash(git reset --hard *)",
+			"Bash(git reset * --hard*)",
+			"Bash(git clean -fd*)",
+			"Bash(git clean * -f*)",
+			"Bash(nix flake update*)"
+		],
+		"blockReadsOutsideWorkingDirectories": true,
+		"disableBypassPermissionsMode": "disable"
+	},
+	"sandbox": {
+		"enabled": true,
+		"failIfUnavailable": true,
+		"allowUnsandboxedCommands": false,
+		"autoAllowBashIfSandboxed": true,
+		"filesystem": {
+			"allowWrite": [
+				"~/.local/share/pnpm",
+				"~/.cache/pnpm",
+				"~/.cache/uv",
+				"~/.npm"
+			],
+			"denyRead": [
+				"~/.ssh",
+				"~/.aws",
+				"~/.config/sops",
+				"~/.gnupg",
+				"~/.npmrc",
+				"~/.netrc",
+				"~/.config/gh",
+				"./.env",
+				"./.env.*",
+				"./secrets/*.dec.env"
+			],
+			"allowRead": ["./.env.example"]
+		},
+		"network": {
+			"allowedDomains": [
+				"registry.npmjs.org",
+				"*.npmjs.org",
+				"github.com",
+				"api.github.com",
+				"objects.githubusercontent.com",
+				"cache.nixos.org",
+				"pypi.org",
+				"files.pythonhosted.org",
+				"semgrep.dev",
+				"127.0.0.1:3000"
+			],
+			"allowLocalBinding": true
+		},
+		"excludedCommands": [
+			"docker *",
+			"gh pr view *",
+			"gh issue view *",
+			"gh run list *",
+			"gh pr create *",
+			"gh pr merge *"
+		],
+		"credentials": {
+			"files": [
+				{
+					"path": "~/.ssh",
+					"mode": "deny"
+				},
+				{
+					"path": "~/.aws",
+					"mode": "deny"
+				},
+				{
+					"path": "~/.config/sops/age/keys.txt",
+					"mode": "deny"
+				}
+			],
+			"envVars": [
+				{
+					"name": "GITHUB_TOKEN",
+					"mode": "deny"
+				},
+				{
+					"name": "NPM_TOKEN",
+					"mode": "deny"
+				},
+				{
+					"name": "SOPS_AGE_KEY",
+					"mode": "deny"
+				},
+				{
+					"name": "OP_SERVICE_ACCOUNT_TOKEN",
+					"mode": "deny"
+				}
+			]
+		}
+	},
+	"enabledPlugins": {},
+	"hooks": {
+		"PreToolUse": [
+			{
+				"matcher": "Read|Edit|Write|NotebookEdit|Grep|Glob|Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard.sh",
+						"timeout": 30,
+						"onFailure": "block"
+					}
+				]
+			},
+			{
+				"matcher": "Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/verify-install.sh",
+						"timeout": 120,
+						"onFailure": "block"
+					}
+				]
+			}
+		],
+		"Stop": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/gates.sh",
+						"timeout": 600
+					}
+				]
+			}
+		]
+	}
+}

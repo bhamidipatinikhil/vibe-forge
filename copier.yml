@@ -1,0 +1,114 @@
+# copier.yml — question set and settings of the vibe-forge Copier template.
+# Every answer is recorded in the generated project's .copier-answers.yml and
+# reused by `copier update --defaults`. Files live under template/ (see _subdirectory).
+_min_copier_version: "9.15.0"         # nixpkgs nixos-26.05 ships copier 9.15.1; nothing below needs a newer feature
+_subdirectory: template
+_templates_suffix: .jinja
+_answers_file: .copier-answers.yml
+# Project-owned files: created once, never touched by `copier update`. Only patterns the template actually renders
+# belong here; add `.env.local` or `plans/*.md` the day the template starts generating them. The two lock files are
+# shipped for day-one determinism (locked against tests/answers/default-web.yml; new-project.sh re-locks when
+# the answers change package.json) and belong to the project from then on: Renovate and humans change them, an
+# update never does. The generated-and-checked files (.env.example, openapi.json, db/schema.sql) follow the
+# project's own code, so an update must not reset them to the template's copy either.
+_skip_if_exists: [README.md, "docs/decisions/*.md", "src/**", "tests/**", "migrations/**", "content/**",
+                  "messages/**", "project.inlang/settings.json", "flags/flags.json", "db/schema.sql",
+                  .env.example, openapi.json, pnpm-lock.yaml, flake.lock]
+# Entries run during `copier update` when the project crosses the version: add one when a file is renamed/removed,
+# or when a release needs a hand merge of project-owned files (then CHANGELOG.md says "Manual upgrade from <tag>").
+# Projects follow the template's main branch (new-project.sh and template-update.yml pass --vcs-ref main), and a
+# version tag on main is what marks the crossing point: tag the commit that needs the entry (README.md, "Releasing").
+# _version_from is `git describe --tags --always` of the project's old template commit, computed again in a fresh
+# clone at update time: usually a commit after a tag (v0.1.0-1-gc17a61b), sometimes a tag itself (v0.1.0, a project
+# made while main was exactly on it) or a pre-release tag (v0.2.0rc1). The first and last are pre-releases in PEP 440
+# (_version_pep440_from: 0.1.0.post1.dev0+c17a61b, 0.2.0rc1), and may already carry part of the next version.
+_migrations: []
+# Printed by `copier copy`, i.e. also when new-project.sh is driving it; the message covers both cases.
+_message_after_copy: |
+  Rendered {{ project_name }} into {{ _copier_conf.dst_path }}.
+  new-project.sh now continues on its own: git init, first pnpm install --no-frozen-lockfile (the shipped
+  pnpm-lock.yaml matches the default answers and is re-locked for others), bash scripts/bootstrap-generated.sh
+  (openapi.json, .env.example), the scaffold commit, direnv allow, pnpm install --frozen-lockfile,
+  lefthook install, just doctor, just check.
+  If you ran copier directly, do those steps yourself (see the template's README.md) before the first prompt.
+
+project_name:
+  type: str
+  help: Human-readable project name
+  validator: "{% if not project_name %}project_name is required{% endif %}"
+project_slug:
+  type: str
+  default: "{{ project_name | lower | replace(' ', '-') }}"
+  validator: "{% if ' ' in project_slug or '/' in project_slug %}no spaces or slashes{% endif %}"
+github_owner:
+  type: str
+  help: GitHub user or org that will host the project (used by .github/CODEOWNERS)
+  validator: "{% if not github_owner or '/' in github_owner or '@' in github_owner or ' ' in github_owner %}a GitHub user or org name, e.g. octocat (no @, no slashes, no spaces){% endif %}"
+npm_scope:
+  type: str
+  default: ""
+  help: npm scope without the @; empty for none
+  validator: "{% if npm_scope.startswith('@') or '/' in npm_scope or ' ' in npm_scope %}scope without the @ (no slashes, no spaces){% endif %}"
+# `kind` keeps the report's three choices so the recorded answer survives a later `copier update` unchanged once
+# library exists; until then that planned kind is a disabled choice and rejected for --data/--defaults too.
+# Both implemented kinds share the backend (Postgres, kysely, better-auth, pg-boss, email, flags, Sentry); web adds
+# TanStack Start served by the same Hono process (docs/decisions/0002-stack.md).
+kind:
+  type: str
+  default: web
+  help: "Project kind: web (TanStack Start inside Hono; the default) or service (Hono API only). library is planned."
+  choices:
+    "web = TanStack Start (React 19 SSR) inside Hono, plus Postgres, auth, jobs, email and flags": web
+    "service = Hono + Zod OpenAPI API on @hono/node-server, plus Postgres, auth, jobs, email and flags": service
+    "library = tsup + typedoc (planned, not implemented in this version)":
+      value: library
+      validator: "not implemented in this version; choose web or service"
+  validator: "{% if kind not in ['web', 'service'] %}kind={{ kind }} is not implemented in this version (planned); choose web or service{% endif %}"
+node_major:
+  type: int
+  choices: [26, 24]
+  default: 26
+  help: "26 = Active LTS since 2026-10-28; 24 = Maintenance LTS"
+with_playwright:
+  type: bool
+  default: true
+  help: "Playwright + axe e2e/security/smoke specs and the Nix-provided Chromium (playwright-driver); kind=web requires it"
+  validator: "{% if kind == 'web' and not with_playwright %}kind=web needs the Nix Chromium (Vitest browser mode, e2e, Lighthouse CI); answer yes{% endif %}"
+with_python:
+  type: bool
+  default: false
+  help: "python312 + uv with UV_PYTHON pinned to the Nix interpreter"
+# Declared (the report's question set) but not implemented: no .devcontainer/ is generated yet, so `true` is
+# rejected instead of silently doing nothing. Drop the validator when the feature ships.
+with_devcontainer:
+  type: bool
+  default: false
+  help: "Planned, not implemented in this version (.devcontainer/ for collaborators without Nix / Codespaces); answer no"
+  validator: "{% if with_devcontainer %}not implemented in this version: no .devcontainer/ is generated yet; answer no{% endif %}"
+# Optional integrations: off by default, added only when a project needs them (docs/decisions/0002-stack.md).
+payments:
+  type: str
+  default: none
+  help: "Payments: none, razorpay (Razorpay SDK + signature-verified webhook) or polar (Polar SDK + Standard Webhooks)"
+  choices: [none, razorpay, polar]
+with_ai:
+  type: bool
+  default: false
+  help: "@anthropic-ai/sdk client and an authenticated POST /api/v1/ai/summarize route"
+with_charts:
+  type: bool
+  default: false
+  when: "{{ kind == 'web' }}"
+  help: "lightweight-charts (time series) + recharts (dashboards) with a /charts example page"
+with_rich_text:
+  type: bool
+  default: false
+  when: "{{ kind == 'web' }}"
+  help: "@tiptap/* rich-text editor with an /editor example page"
+# Agent harness adapters: claude = Claude Code (.claude/ + CLAUDE.md), opencode = OpenCode V2 (.opencode/ +
+# opencode.jsonc), both = render both adapters (they coexist; AGENTS.md is the shared, harness-neutral brief).
+harness:
+  type: str
+  default: both
+  choices: [claude, opencode, both]
+  help: "Agent harness adapter(s) to render"

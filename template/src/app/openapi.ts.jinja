@@ -1,0 +1,39 @@
+/** Metadata of the OpenAPI 3.1 document served at `/openapi.json`. */
+export const openApiConfig = {
+	/** OpenAPI specification version of the document. */
+	openapi: "3.1.0",
+	/** Title, version and description shown by API tooling. */
+	info: {
+		/** Human-readable API name. */
+		title: "{{ project_name }}",
+		/** API version, independent of the package version. */
+		version: "0.1.0",
+		/** Short description shown next to the title. */
+		description:
+			"Generated from the Zod route schemas; regenerate openapi.json with `pnpm run openapi`.",
+	},
+	/** Tag descriptions; every route belongs to exactly one tag. */
+	tags: [
+		{
+			/** Tag name referenced by routes. */
+			name: "health",
+			/** What the tag groups. */
+			description: "Liveness and readiness probes",
+		},
+		{ name: "auth", description: "Accounts and sessions (better-auth)" },
+		{ name: "slug", description: "URL slug generation" },
+		{ name: "events", description: "Server-Sent Events" },
+{%- if kind == 'web' %}
+		{
+			name: "web",
+			description: "Endpoints the web app calls (OG images, web vitals)",
+		},
+{%- endif %}
+{%- if payments != 'none' %}
+		{ name: "payments", description: "Payment provider webhooks" },
+{%- endif %}
+{%- if with_ai %}
+		{ name: "ai", description: "Claude-backed features" },
+{%- endif %}
+	],
+};

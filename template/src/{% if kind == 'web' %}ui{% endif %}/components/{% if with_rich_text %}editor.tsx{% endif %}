@@ -1,0 +1,35 @@
+// Rich text with Tiptap (ProseMirror). Store the JSON document (editor.getJSON()), never the HTML: rendering
+// user-supplied HTML is an XSS sink, the JSON is re-rendered by Tiptap with a fixed schema.
+import { EditorContent, type JSONContent, useEditor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import type { ReactElement } from "react";
+
+/** Props of {@link RichTextEditor}. */
+export interface RichTextEditorProps {
+	/** Accessible name of the editing area. */
+	readonly label: string;
+	/** Initial document. */
+	readonly initial?: JSONContent;
+	/** Called with the document after every change. */
+	readonly onChange?: (document: JSONContent) => void;
+}
+
+/** A rich-text editing area (bold, italic, lists, headings via StarterKit's keyboard shortcuts). */
+export function RichTextEditor(props: RichTextEditorProps): ReactElement {
+	const editor = useEditor({
+		extensions: [StarterKit],
+		content: props.initial ?? "",
+		immediatelyRender: false, // SSR: render on the client only, avoiding a hydration mismatch
+		editorProps: {
+			attributes: {
+				"aria-label": props.label,
+				class:
+					"min-h-40 rounded-md border p-3 focus-visible:outline-2 focus-visible:outline-ring",
+			},
+		},
+		onUpdate: ({ editor: current }) => {
+			props.onChange?.(current.getJSON());
+		},
+	});
+	return <EditorContent editor={editor} />;
+}

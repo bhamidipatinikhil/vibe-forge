@@ -1,0 +1,74 @@
+# .github/workflows/ci.yml
+# The required-check workflow: the identical gate (`just ci`, plus `just e2e` when Playwright was rendered) inside the
+# identical Nix shell as local.
+# Every action is pinned to a full commit SHA; the Nix installer is the version-pinned determinate-nix-action.
+name: ci
+on:
+  pull_request:
+  merge_group:                      # required: without it the merge queue never receives a status
+  push: { branches: [main] }
+  schedule: [{ cron: "0 3 * * 1" }]
+permissions: {}
+concurrency: { group: "${{ github.workflow }}-${{ github.ref }}", cancel-in-progress: true }
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, id-token: write }   # id-token for FlakeHub Cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: DeterminateSystems/determinate-nix-action@92957199488000b908fdad19f63711000965d8f3 # v3.24.1
+      - uses: DeterminateSystems/flakehub-cache-action@3ac6f3c19fc52eeb1408fd434bd1b4ed4266bf25 # v3.24.1
+      - run: nix flake check
+      - run: nix develop .#quiet -c pnpm install --frozen-lockfile
+      - run: nix develop .#quiet -c just doctor
+      - run: nix develop .#quiet -c just ci
+        env: { CI: "1" }
+      # Workflows are copied verbatim for every Copier answer set; with_playwright=false renders neither playwright.config.ts
+      # nor tests/e2e, so the Playwright gate is guarded at step level (the job stays green, so it can stay a required check).
+      # `just e2e` = tests/e2e (axe, WCAG 2.2 AA), tests/security (ASVS) and tests/smoke; playwright.config.ts starts the app
+      # itself, and its html report + failure traces land in reports/, which the next step uploads.
+      - run: nix develop .#quiet -c just e2e
+        if: hashFiles('tests/e2e/**/*.spec.ts') != ''
+        env: { CI: "1" }
+      - if: hashFiles('tests/e2e/**/*.spec.ts') == ''
+        run: echo "::notice::no tests/e2e/**/*.spec.ts (generated with with_playwright=false); just e2e has nothing to run"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with: { name: "reports-${{ github.sha }}", path: "reports/**", retention-days: 90 }
+      - name: Template drift (non-blocking)
+        # `copier check-update` compares release tags, but projects follow the template's main branch, and it clones the
+        # template, which fails ("Checking is only supported in git-tracked templates") for a local-path _src_path
+        # (a project generated with new-project.sh --local), which exists nowhere on a runner. Comparing the commit Copier
+        # recorded (_commit: a `git describe --tags` string, <tag>-<n>-g<sha>, a tag, or a bare sha) with the template's
+        # main via `git ls-remote` needs no clone and keeps the unreachable case a notice instead of a false warning.
+        # Only warn: template-update.yml opens the PR weekly.
+        run: |
+          field() { sed -n "s/^$1: *//p" .copier-answers.yml | tr -d "\"'"; }
+          have="$(field _commit)"; src="$(field _src_path)"
+          case "$src" in gh:*) src="https://github.com/${src#gh:}" ;; gl:*) src="https://gitlab.com/${src#gl:}" ;; esac
+          if [ -z "$have" ] || [ -z "$src" ]; then echo "::notice::.copier-answers.yml records no _commit/_src_path; template drift unknown"; exit 0; fi
+          refs="$(git ls-remote "$src" refs/heads/main "refs/tags/$have" "refs/tags/$have^{}" 2>/dev/null || true)"
+          main="$(awk '$2 == "refs/heads/main" { print $1 }' <<<"$refs")"
+          if [ -z "$main" ]; then echo "::notice::cannot read the main branch of template $src from this runner; template drift unknown"; exit 0; fi
+          case "$have" in
+            *-[0-9]*-g[0-9a-f]*) sha="${have##*-g}" ;;   # a commit after a tag
+            *[!0-9a-f]*) sha="$(awk -v t="refs/tags/$have" '$2 == t "^{}" { p = $1 } $2 == t { c = $1 } END { print (p != "" ? p : c) }' <<<"$refs")" ;;   # a tag (annotated: its commit)
+            *) sha="$have" ;;   # a bare sha (a template without tags)
+          esac
+          if [ -n "$sha" ] && [ "${main#"$sha"}" != "$main" ]; then
+            echo "template $have is current (the template's main is at ${main:0:7})"
+          else
+            echo "::warning::template update available: project is on $have, the template's main is at ${main:0:7} (template-update.yml opens the PR weekly)"
+          fi
+  mutation-full:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: DeterminateSystems/determinate-nix-action@92957199488000b908fdad19f63711000965d8f3 # v3.24.1
+      - run: nix develop .#quiet -c pnpm install --frozen-lockfile
+      - run: nix develop .#quiet -c pnpm exec stryker run --incremental --force
+      - run: nix develop .#quiet -c pnpm exec stryker run stryker.domain.config.json --incremental --force

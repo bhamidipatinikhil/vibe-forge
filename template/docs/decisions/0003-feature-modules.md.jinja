@@ -1,0 +1,83 @@
+---
+status: accepted
+date: 2026-11-04
+decision-makers: project maintainers
+---
+
+# Feature modules: one product area per `src/modules/<name>/`, enforced from day one
+
+## Context and Problem Statement
+
+The layers of ADR 0001 keep pure logic, HTTP, IO{% if kind == 'web' %} and the browser{% endif %} apart. Nothing keeps one product area from
+reaching into another. As a project grows from one feature to several (chat, courses, newsletters), every domain
+file can import every other, and an agent adding a feature has no boundary telling it where the feature ends.
+
+ADR 0001 reserved `src/modules/*` for this but deferred the dependency-cruiser rule until the first module existed.
+That left the boundary to the agent's memory.{% if kind == 'web' %} It also left a gap: `ui-not-server` listed the
+server directories by name, so the UI could have imported a module and pulled server code into the browser bundle.{% endif %}
+
+How should a product area be fenced so that the fence exists before the first one is written?
+
+## Decision Drivers
+
+* A boundary that must always hold is a gate, not a sentence (`docs/PLAYBOOK.md` §2).
+* A feature can be reviewed, owned and removed as one folder.
+* A directory added later is covered by the existing rules without anyone editing them.
+
+## Considered Options
+
+* Layers only: a feature is a set of files inside each layer (`src/domain/chat.ts`, `src/app/routes/chat.ts`, …).
+* Feature folders inside each layer (`src/domain/chat/`, `src/infra/chat/`, …), each entered through an `index.ts`.
+* Modules beside the layers: `src/modules/<name>/` holds one product area's server code and is entered through
+  its `index.ts`.
+
+## Decision Outcome
+
+Chosen option: "Modules beside the layers". A product area's server code then lives in one folder that one set of
+rules can fence, and the shared layers stay as they are. A small feature may still be a few files in the layers. A
+product area with several files, its own tables or its own routes becomes a module.
+
+The rules in `.dependency-cruiser.cjs` hold from day one, before the first module exists:
+
+* `no-cross-module-internals`: a module reaches another module through that module's `index.ts` only.
+* `modules-via-index-from-outside`: code outside `src/modules` enters a module through its `index.ts` only.
+* `module-domain-pure`: a module's `domain.ts` (or `domain/`) imports `src/domain` and its own domain only.
+* `module-not-infra`: a module imports `src/infra` for types only. `src/infra/server.ts` passes in its database,
+  mailer, jobs and flags.
+* `domain-independent`, `schemas-only-domain`{% if kind == 'web' %} and `ui-not-server`{% endif %} become default-deny:
+  each forbids everything under `src/` outside its allowed directories, so a new directory, modules included, is
+  covered without editing them.
+
+This replaces the earlier plan in ADR 0001 to add the rule together with the first module; the rest of ADR 0001 stands.
+
+### Consequences
+
+* Good, because a product area's server code is one folder: one review, one CODEOWNERS line, one place to delete.
+* Good, because no rule has to be remembered when the first module is added.{% if kind == 'web' %} The UI cannot
+  import server code through a directory nobody listed.{% endif %}
+* Bad, because wiring a module touches `src/app/app.ts` (its routes) and `src/infra/server.ts` (its dependencies).
+* Bad, because server code now has two homes: the layers and the modules. `.claude/rules/modules.md` says which to
+  use.
+
+### Confirmation
+
+`tests/arch/modules.test.ts` cruises a fixture with every forbidden edge next to the allowed ones. It fails when a
+rule stops reporting or starts reporting an allowed edge. `just arch` (part of `just check`) applies the same rules to
+`src/`. `.claude/rules/modules.md` gives the agent the shape of a module whenever it edits `src/modules/**`.
+
+## Pros and Cons of the Options
+
+### Layers only
+
+* Good, because there is nothing new to learn.
+* Bad, because a feature boundary exists only in file names; nothing stops `courses` from importing `chat` internals.
+
+### Feature folders inside each layer
+
+* Good, because the layer rules stay as they are.
+* Bad, because one feature is spread over four or five folders, each needing its own index rule and review.
+
+### Modules beside the layers
+
+* Good, because one folder per product area, fenced by four rules that work before the folder exists.
+* Bad, because a module's `index.ts` is one more public API to keep small.

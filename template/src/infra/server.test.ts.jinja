@@ -1,0 +1,225 @@
+import { once } from "node:events";
+import { Server } from "node:http";
+import { connect } from "node:net";
+import { afterEach, describe, expect, it, type MockInstance, vi } from "vitest";
+import { logger } from "../logger.js";
+import {
+	type RunningServer,
+	type ServerOptions,
+	startServer,
+} from "./server.js";
+
+vi.hoisted(() => {
+	vi.stubEnv("NODE_ENV", "test");
+	vi.stubEnv("LOG_LEVEL", "silent");
+	vi.stubEnv("JOBS_ENABLED", "false");
+});
+
+const SHUTDOWN_DEADLINE_MS = 10_000;
+
+interface Instance extends RunningServer {
+	readonly server: Server;
+	readonly port: number;
+	readonly info: MockInstance<typeof logger.info>;
+	readonly error: MockInstance<typeof logger.error>;
+}
+
+const instances: Instance[] = [];
+const previousExitCode = process.exitCode;
+
+/**
+ * Starts the real composition root (Postgres from tests/setup.db.ts, pg-boss,
+ * the flag file, better-auth) on a free port and waits until it listens. The
+ * logger is spied on, not mocked: it is the same instance the app writes through.
+ */
+async function boot(options: Partial<ServerOptions> = {}): Promise<Instance> {
+	const info = vi.spyOn(logger, "info");
+	const error = vi.spyOn(logger, "error");
+	const running = await startServer({
+		port: 0,
+		host: "127.0.0.1",
+		shutdownDeadlineMs: SHUTDOWN_DEADLINE_MS,
+		...options,
+	});
+	const { server } = running;
+	if (!(server instanceof Server)) {
+		throw new Error("expected an HTTP/1.1 server");
+	}
+	if (!server.listening) {
+		await once(server, "listening");
+	}
+	const address = server.address();
+	if (address === null || typeof address === "string") {
+		throw new Error("server has no TCP address");
+	}
+	const instance = { ...running, server, port: address.port, info, error };
+	instances.push(instance);
+	return instance;
+}
+
+afterEach(async () => {
+	vi.useRealTimers();
+	vi.restoreAllMocks();
+	process.exitCode = previousExitCode;
+	for (const instance of instances.splice(0)) {
+		if (instance.server.listening) {
+			instance.shutdown("SIGTERM");
+			await instance.stopped;
+		}
+	}
+});
+
+// A raw socket keeps this independent of fetch, which MSW intercepts in tests.
+function rawGet(port: number, path: string): Promise<string> {
+	return new Promise((resolve, reject) => {
+		let data = "";
+		const socket = connect(port, "127.0.0.1", () => {
+			socket.write(
+				`GET ${path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n`,
+			);
+		});
+		socket.setEncoding("utf8");
+		socket.on("data", (chunk: string) => {
+			data += chunk;
+		});
+		socket.on("end", () => {
+			resolve(data);
+		});
+		socket.on("error", reject);
+	});
+}
+
+function countCalls(
+	spy: MockInstance<typeof logger.info>,
+	message: string,
+): number {
+	return spy.mock.calls.filter((call) => call.includes(message)).length;
+}
+
+describe("startServer", () => {
+	it("listens on the given interface, logs it and reports ready (database included)", async () => {
+		const { server, port, info } = await boot();
+		expect(port).toBeGreaterThan(0);
+		expect(server.address()).toMatchObject({ address: "127.0.0.1", port });
+		expect(info).toHaveBeenCalledWith(
+			{ address: "127.0.0.1", port, nodeEnv: "test" },
+			"listening",
+		);
+		const ready = await rawGet(port, "/readyz");
+		expect(ready).toMatch(/^HTTP\/1\.1 200/);
+		expect(ready).toContain(
+			'"checks":{"accepting-connections":"ok","database":"ok"}',
+		);
+	});
+{%- if kind == 'web' %}
+
+	it("reports the web app's readiness: 503 until the server bundle is loaded", async () => {
+		const loading = await boot({ webReady: () => Promise.resolve(false) });
+		const notReady = await rawGet(loading.port, "/readyz");
+		expect(notReady).toMatch(/^HTTP\/1\.1 503/);
+		expect(notReady).toContain('"web":"fail"');
+		const loaded = await boot({ webReady: () => Promise.resolve(true) });
+		expect(await rawGet(loaded.port, "/readyz")).toContain('"web":"ok"');
+	});
+{%- endif %}
+
+	it("serves better-auth: an anonymous session lookup answers null", async () => {
+		const { port } = await boot();
+		const session = await rawGet(port, "/api/auth/get-session");
+		expect(session).toMatch(/^HTTP\/1\.1 200/);
+		expect(session.trimEnd().endsWith("null")).toBe(true);
+	});
+
+	it("drains on the first signal: /readyz flips to 503, a second signal is a no-op, resources are released", async () => {
+		const instance = await boot();
+		let finishClose: ((failure?: Error) => void) | undefined;
+		// In-flight requests keep the listener open until the drain completes.
+		const close = vi
+			.spyOn(instance.server, "close")
+			.mockImplementation((callback) => {
+				finishClose = callback;
+				return instance.server;
+			});
+		const clear = vi.spyOn(globalThis, "clearTimeout");
+
+		instance.shutdown("SIGTERM");
+		instance.shutdown("SIGINT");
+
+		expect(instance.info).toHaveBeenCalledWith(
+			{ signal: "SIGTERM" },
+			"shutting down",
+		);
+		expect(countCalls(instance.info, "shutting down")).toBe(1);
+		expect(close).toHaveBeenCalledTimes(1);
+		const ready = await rawGet(instance.port, "/readyz");
+		expect(ready).toMatch(/^HTTP\/1\.1 503/);
+		expect(ready).toContain('"accepting-connections":"fail"');
+
+		// Let the drain finish: the real close runs the callback shutdown() gave it.
+		close.mockRestore();
+		instance.server.close(finishClose);
+		await instance.stopped;
+		expect(instance.info).toHaveBeenCalledWith("server closed");
+		expect(instance.info).toHaveBeenCalledWith("resources released");
+		expect(clear).toHaveBeenCalled();
+		expect(instance.error).not.toHaveBeenCalled();
+		expect(process.exitCode).toBe(previousExitCode);
+	});
+
+	it("exits with status 1 when the drain deadline passes", async () => {
+		const instance = await boot();
+		let finishClose: ((failure?: Error) => void) | undefined;
+		const close = vi
+			.spyOn(instance.server, "close")
+			.mockImplementation((callback) => {
+				finishClose = callback;
+				return instance.server;
+			});
+		const exit = vi
+			.spyOn(process, "exit")
+			.mockImplementation(() => undefined as never);
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+		instance.shutdown("SIGTERM");
+		vi.advanceTimersByTime(SHUTDOWN_DEADLINE_MS - 1);
+		expect(exit).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(1);
+		expect(instance.error).toHaveBeenCalledWith(
+			{ deadlineMs: SHUTDOWN_DEADLINE_MS },
+			"shutdown deadline hit",
+		);
+		expect(exit).toHaveBeenCalledWith(1);
+		// process.exit was stubbed, so finish the drain for real: the listener closes and resources are released.
+		vi.useRealTimers();
+		close.mockRestore();
+		instance.server.close(finishClose);
+		await instance.stopped;
+	});
+
+	it("reports a server that did not close cleanly, and still releases its resources", async () => {
+		const instance = await boot();
+		const failure = new Error("connections still open");
+		const close = vi
+			.spyOn(instance.server, "close")
+			.mockImplementation((callback) => {
+				callback?.(failure);
+				return instance.server;
+			});
+
+		instance.shutdown("SIGTERM");
+		await instance.stopped;
+		expect(instance.error).toHaveBeenCalledWith(
+			{ err: failure },
+			"server did not close cleanly",
+		);
+		expect(process.exitCode).toBe(1);
+		expect(instance.info).not.toHaveBeenCalledWith("server closed");
+		expect(instance.info).toHaveBeenCalledWith("resources released");
+		close.mockRestore();
+		await new Promise<void>((resolve) => {
+			instance.server.close(() => {
+				resolve();
+			});
+		});
+	});
+});

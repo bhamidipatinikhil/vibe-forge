@@ -1,0 +1,261 @@
+CHANGELOG.md
+COMPLETE_GUIDE.md
+copier.yml
+.github/workflows/gate-flake-rate.yml
+.github/workflows/golden-prompt.yml
+.github/workflows/template-test.yml
+.gitignore
+new-project.sh
+README.md
+template/AGENTS.md.jinja
+template/biome.json.jinja
+template/CHANGELOG.md
+template/.changeset/config.json
+template/.changeset/README.md
+template/.claude/hooks/re-inject.sh
+template/commitlint.config.js
+template/{{_copier_conf.answers_file}}.jinja
+template/db/schema.sql
+template/.dependency-cruiser.cjs.jinja
+template/Dockerfile.jinja
+template/.dockerignore
+template/docs/decisions/0001-record-architecture-decisions.md
+template/docs/decisions/0002-stack.md.jinja
+template/docs/decisions/0003-feature-modules.md.jinja
+template/docs/decisions/0004-knowledge-pipelines.md
+template/docs/glossary.md
+template/docs/learnings.md
+template/docs/metrics.md
+template/docs/PLAYBOOK.md.jinja
+template/docs/registry.md
+template/docs/runbooks/rollback.md.jinja
+template/docs/services.md.jinja
+template/docs/upgrading/.gitkeep
+template/.envrc
+template/eslint.config.js.jinja
+template/flags/flags.json
+template/flake.lock
+template/flake.nix.jinja
+template/.github/CODEOWNERS.jinja
+template/.github/workflows/ci.yml
+template/.github/workflows/deploy.yml
+template/.github/workflows/migrations.yml
+template/.github/workflows/secpass.yml
+template/.github/workflows/supply-chain.yml
+template/.github/workflows/template-update.yml
+template/.gitignore
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/agents/reviewer.md
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/ci-settings.json
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/claude-security-guidance.md
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/hooks/gates.sh
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/hooks/guard-config.sh
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/hooks/guard.sh
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/hooks/tests/hooks.test.ts
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/hooks/verify-install.sh
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/rules/api.md.jinja
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/rules/{% if kind == 'web' %}ui.md{% endif %}
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/rules/migrations.md
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/rules/modules.md.jinja
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/rules/tests.md
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/security-patterns.json
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/settings.json
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/skills/release/SKILL.md
+template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/skills/study-reference/SKILL.md.jinja
+template/{% if harness in ['claude', 'both'] %}CLAUDE.md{% endif %}.jinja
+template/{% if harness in ['opencode', 'both'] %}.opencode{% endif %}/command/check.md
+template/{% if harness in ['opencode', 'both'] %}.opencode{% endif %}/opencode.jsonc
+template/{% if kind == 'web' %}components.json{% endif %}
+template/{% if kind == 'web' %}content-collections.ts{% endif %}
+template/{% if kind == 'web' %}content{% endif %}/posts/hello-world.mdx
+template/{% if kind == 'web' %}lighthouserc.json{% endif %}
+template/{% if kind == 'web' %}messages{% endif %}/de.json.jinja
+template/{% if kind == 'web' %}messages{% endif %}/en.json.jinja
+template/{% if kind == 'web' %}project.inlang{% endif %}/settings.json
+template/{% if kind == 'web' %}public{% endif %}/favicon.svg
+template/{% if kind == 'web' %}public{% endif %}/robots.txt
+template/{% if kind == 'web' %}.size-limit.json{% endif %}
+template/{% if kind == 'web' %}vite.config.ts{% endif %}
+template/{% if kind == 'web' %}vitest.browser.config.ts{% endif %}
+template/{% if with_playwright %}playwright.config.ts{% endif %}.jinja
+template/.jscpd.json
+template/justfile.jinja
+template/knip.json.jinja
+template/lefthook.yml
+template/migrations/20261103000000_auth.sql
+template/package.json.jinja
+template/pipelines/intent-driven.md
+template/pipelines/README.md
+template/pipelines/reference-study.md
+template/pipelines/telemetry-driven.md
+template/plans/.gitkeep
+template/pnpm-lock.yaml
+template/pnpm-workspace.yaml.jinja
+template/README.md.jinja
+template/renovate.json
+template/REVIEW.md
+template/rules/import-meta-env-only-in-client-env.yml
+template/rules/no-as-any.yml
+template/rules/no-console-outside-logger.yml
+template/rules/no-empty-catch.yml
+template/rules/no-eval.yml
+template/rules/no-process-env-outside-env.yml
+template/rules/no-start-server-endpoints.yml
+template/rules/no-vi-mock-of-repo-module.yml
+template/rules/suppression-needs-reason.yml
+template/rule-tests/import-meta-env-only-in-client-env-test.yml
+template/rule-tests/no-start-server-endpoints-test.yml
+template/scripts/agent-run.sh
+template/scripts/bootstrap-generated.sh
+template/scripts/db.ts
+template/scripts/docs-drift.sh
+template/scripts/emit-openapi.ts
+template/scripts/env-example.ts.jinja
+template/scripts/{% if kind == 'web' %}dev.ts{% endif %}
+template/scripts/{% if kind == 'web' %}gen.ts{% endif %}
+template/scripts/lib/ephemeral-pg.ts
+template/scripts/lib/write-or-check.ts
+template/scripts/offload-context.mjs
+template/scripts/sync-tasks.mjs
+template/scripts/with-pg.ts
+template/security-evidence/.gitkeep
+template/sgconfig.yml
+template/.sops.yaml
+template/.squawk.toml
+template/src/app/app.test.ts.jinja
+template/src/app/app.ts.jinja
+template/src/app/openapi.ts.jinja
+template/src/app/ports.ts.jinja
+template/src/app/routes/auth.ts
+template/src/app/routes/events.ts
+template/src/app/routes/health.ts
+template/src/app/routes/{% if kind == 'service' %}root.ts{% endif %}
+template/src/app/routes/{% if kind == 'web' %}og.ts{% endif %}
+template/src/app/routes/{% if kind == 'web' %}vitals.ts{% endif %}
+template/src/app/routes/{% if kind == 'web' %}web-routes.test.ts{% endif %}
+template/src/app/routes/{% if payments != 'none' %}payments.ts{% endif %}.jinja
+template/src/app/routes/{% if with_ai %}ai.test.ts{% endif %}
+template/src/app/routes/{% if with_ai %}ai.ts{% endif %}
+template/src/app/routes/slug.ts
+template/src/app/security.test.ts
+template/src/app/security.ts.jinja
+template/src/app/session.ts
+template/src/app/telemetry.test.ts.jinja
+template/src/app/tracing.test.ts
+template/src/app/tracing.ts
+template/src/domain/slug.test.ts
+template/src/domain/slug.ts
+template/src/env.ts.jinja
+template/src/{% if kind == 'service' %}ui{% endif %}/.gitkeep
+template/src/{% if kind == 'web' %}ui{% endif %}/client.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/components/auth-form.test.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/components/auth-form.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/components/{% if with_charts %}charts.test.tsx{% endif %}
+template/src/{% if kind == 'web' %}ui{% endif %}/components/{% if with_charts %}charts.tsx{% endif %}
+template/src/{% if kind == 'web' %}ui{% endif %}/components/{% if with_rich_text %}editor.test.tsx{% endif %}
+template/src/{% if kind == 'web' %}ui{% endif %}/components/{% if with_rich_text %}editor.tsx{% endif %}
+template/src/{% if kind == 'web' %}ui{% endif %}/components/locale-switcher.test.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/components/locale-switcher.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/components/ui/button.test.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/components/ui/button.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/components/ui/card.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/components/ui/field.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/components/ui/input.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/env.schema.ts
+template/src/{% if kind == 'web' %}ui{% endif %}/lib/api.ts
+template/src/{% if kind == 'web' %}ui{% endif %}/lib/lib.test.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/lib/monitoring.ts
+template/src/{% if kind == 'web' %}ui{% endif %}/lib/utils.ts
+template/src/{% if kind == 'web' %}ui{% endif %}/public-env.ts
+template/src/{% if kind == 'web' %}ui{% endif %}/router.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/routes/account.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/routes/blog/$slug.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/routes/blog/index.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/routes/{% if with_charts %}charts.tsx{% endif %}
+template/src/{% if kind == 'web' %}ui{% endif %}/routes/{% if with_rich_text %}editor.tsx{% endif %}
+template/src/{% if kind == 'web' %}ui{% endif %}/routes/index.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/routes/reset-password.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/routes/__root.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/routes/sign-in.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/routes/sign-up.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/seo/json-ld.test.tsx
+template/src/{% if kind == 'web' %}ui{% endif %}/seo/json-ld.ts
+template/src/{% if kind == 'web' %}ui{% endif %}/server.ts
+template/src/{% if kind == 'web' %}ui{% endif %}/styles/app.css
+template/src/index.test.ts
+template/src/index.ts.jinja
+template/src/infra/auth.test.ts
+template/src/infra/auth.ts
+template/src/infra/db/schema.gen.ts
+template/src/infra/db.test.ts
+template/src/infra/db.ts
+template/src/infra/email/mailer.test.ts
+template/src/infra/email/mailer.ts
+template/src/infra/email/templates.tsx
+template/src/infra/errors.test.ts
+template/src/infra/errors.ts
+template/src/infra/flags.test.ts
+template/src/infra/flags.ts
+template/src/infra/{% if kind == 'web' %}og.test.ts{% endif %}
+template/src/infra/{% if kind == 'web' %}og.tsx{% endif %}
+template/src/infra/{% if kind == 'web' %}web.test.ts{% endif %}
+template/src/infra/{% if kind == 'web' %}web.ts{% endif %}
+template/src/infra/{% if payments != 'none' %}payments.test.ts{% endif %}.jinja
+template/src/infra/{% if payments != 'none' %}payments.ts{% endif %}.jinja
+template/src/infra/{% if with_ai %}ai.test.ts{% endif %}
+template/src/infra/{% if with_ai %}ai.ts{% endif %}
+template/src/infra/jobs.test.ts
+template/src/infra/jobs.ts
+template/src/infra/server.test.ts.jinja
+template/src/infra/server.ts.jinja
+template/src/instrumentation.ts
+template/src/logger.ts
+template/src/reset.d.ts
+template/src/schemas/auth.ts
+template/src/schemas/error.ts
+template/src/schemas/slug.ts
+template/stryker.config.json
+template/stryker.domain.config.json
+template/tests/arch/__fixtures__/src/app/route.ts
+template/tests/arch/__fixtures__/src/domain/leak.ts
+template/tests/arch/__fixtures__/src/domain/shared.ts
+template/tests/arch/__fixtures__/src/infra/db/schema.gen.ts
+template/tests/arch/__fixtures__/src/infra/db.ts
+template/tests/arch/__fixtures__/src/infra/peek.ts
+template/tests/arch/__fixtures__/src/infra/render.ts
+template/tests/arch/__fixtures__/src/infra/server.ts
+template/tests/arch/__fixtures__/src/modules/a/index.ts
+template/tests/arch/__fixtures__/src/modules/a/internal.ts
+template/tests/arch/__fixtures__/src/modules/b/domain.ts
+template/tests/arch/__fixtures__/src/modules/b/index.ts
+template/tests/arch/__fixtures__/src/modules/b/routes.ts
+template/tests/arch/__fixtures__/src/modules/b/store.ts
+template/tests/arch/__fixtures__/src/schemas/leak.ts
+template/tests/arch/__fixtures__/src/ui/leak.ts
+template/tests/arch/modules.test.ts.jinja
+template/tests/global-setup.pg.ts
+template/tests/{% if with_playwright %}e2e{% endif %}/a11y.spec.ts.jinja
+template/tests/{% if with_playwright %}e2e{% endif %}/{% if kind == 'web' %}web.spec.ts{% endif %}
+template/tests/{% if with_playwright %}security{% endif %}/access-matrix.ts.jinja
+template/tests/{% if with_playwright %}security{% endif %}/asvs-v8-authorization.spec.ts
+template/tests/{% if with_playwright %}smoke{% endif %}/readyz.spec.ts
+template/tests/lint/__fixtures__/a11y-violations.tsx
+template/tests/lint/jsx-a11y.test.ts
+template/tests/load/smoke.js
+template/tests/setup.db.ts
+template/tests/setup.msw.ts
+template/tests/unit/.gitkeep
+template/tsconfig.build.json.jinja
+template/tsconfig.json.jinja
+template/typedoc.json
+template/vitest.config.ts.jinja
+template/vitest.unit.config.ts
+template/.worktreeinclude
+template/.zap/rules.tsv
+tests/answers/default-service.yml
+tests/answers/default-web.yml
+tests/answers/no-playwright-node24.yml
+tests/answers/python-scoped.yml
+tests/answers/service-opencode.yml
+tests/answers/web-full.yml
+tests/answers/web-polar-node24.yml
+TREE.txt

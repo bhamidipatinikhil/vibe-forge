@@ -1,0 +1,9 @@
+---
+paths:
+  - "src/app/**/*.ts"
+  - "src/modules/**/*.ts"
+---
+- Validate request bodies with the Zod schemas in `src/schemas/`; never hand-roll checks. The app reaches the database, auth, mail and flags only through `src/app/ports.ts`.
+- Every new endpoint is a Hono route with an entry in `openapi.json` (regenerate with `pnpm openapi`, commit){% if kind == 'web' %}, never a TanStack Start server function or server route{% endif %}. `just check` fails on drift and, through oasdiff, on a breaking change against `origin/main` (a removed or renamed field, route or status code): that needs a deliberate API-major change and `#api-break <reason>` in the commit body, never a silent edit.
+- A route for signed-in callers declares `middleware: [requireSession(auth)] as const` in its `createRoute` (`src/app/session.ts`) and documents a 401: anonymous callers get 401 before validation, and the handler reads the caller from `c.var.session`. Path parameters are written `{id}` in the route; spans and the access matrix use that form too.
+- Scope every data access by the authenticated principal (`c.var.session.userId`); state-changing routes stay under `/api/v1/` so the write kill switch covers them{% if with_playwright %}; add every route to `tests/security/access-matrix.ts`{% endif %}.

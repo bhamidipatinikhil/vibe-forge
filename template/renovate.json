@@ -1,0 +1,26 @@
+{
+	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
+	"description": [
+		"Inline copy of the shared preset the design describes (github>OWNER/renovate-config#v1): config:best-practices + security:openssf-scorecard, nix manager for flake.lock, minimumReleaseAge 7 days, automerge minor/patch after 14 days, pinned action digests.",
+		"Kept self-contained so a project has no cross-repo dependency; policy changes arrive through `copier update` instead of a preset tag."
+	],
+	"extends": [
+		"config:best-practices",
+		"security:openssf-scorecard",
+		"helpers:pinGitHubActionDigests"
+	],
+	"nix": { "enabled": true },
+	"lockFileMaintenance": { "enabled": true },
+	"minimumReleaseAge": "7 days",
+	"osvVulnerabilityAlerts": true,
+	"packageRules": [
+		{ "matchManagers": ["nix"], "groupName": "nix flake inputs" },
+		{ "matchManagers": ["github-actions"], "groupName": "github actions" },
+		{
+			"matchUpdateTypes": ["minor", "patch"],
+			"matchCurrentVersion": "!/^0/",
+			"automerge": true,
+			"minimumReleaseAge": "14 days"
+		}
+	]
+}

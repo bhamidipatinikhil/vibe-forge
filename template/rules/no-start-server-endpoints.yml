@@ -1,0 +1,61 @@
+id: no-start-server-endpoints
+language: TypeScript
+severity: error
+message: 'Add a Hono route instead of a TanStack Start server function or server route.'
+note: 'Every endpoint is a documented Hono route (src/app/routes): it then appears in openapi.json, the access matrix (tests/security/access-matrix.ts), Schemathesis and the span-per-route test. Start server functions and server routes bypass all four. Call the Hono route from the UI (src/ui/lib/api.ts).'
+files:
+  - src/**
+rule:
+  any:
+    - pattern: createServerFn($$$)
+    - pattern: createServerOnlyFn($$$)
+    - pattern: createServerFileRoute($$$)
+    - pattern: createAPIFileRoute($$$)
+    - pattern: createMiddleware($$$)
+    - kind: pair
+      has:
+        field: key
+        regex: ^server$
+      inside:
+        kind: object
+        inside:
+          kind: arguments
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: call_expression
+              has:
+                field: function
+                regex: ^createFileRoute$
+---
+id: no-start-server-endpoints-tsx
+language: Tsx
+severity: error
+message: 'Add a Hono route instead of a TanStack Start server function or server route.'
+note: 'Every endpoint is a documented Hono route (src/app/routes): it then appears in openapi.json, the access matrix (tests/security/access-matrix.ts), Schemathesis and the span-per-route test. Start server functions and server routes bypass all four. Call the Hono route from the UI (src/ui/lib/api.ts).'
+files:
+  - src/**
+rule:
+  any:
+    - pattern: createServerFn($$$)
+    - pattern: createServerOnlyFn($$$)
+    - pattern: createServerFileRoute($$$)
+    - pattern: createAPIFileRoute($$$)
+    - pattern: createMiddleware($$$)
+    - kind: pair
+      has:
+        field: key
+        regex: ^server$
+      inside:
+        kind: object
+        inside:
+          kind: arguments
+          inside:
+            kind: call_expression
+            has:
+              field: function
+              kind: call_expression
+              has:
+                field: function
+                regex: ^createFileRoute$

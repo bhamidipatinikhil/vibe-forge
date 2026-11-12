@@ -1,0 +1,26 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { type ReactElement, useState } from "react";
+import { RichTextEditor } from "../components/editor";
+
+export const Route = createFileRoute("/editor")({
+	head: () => ({ meta: [{ title: "Editor" }] }),
+	component: Editor,
+});
+
+function Editor(): ReactElement {
+	const [words, setWords] = useState(0);
+	return (
+		<div className="grid gap-4">
+			<h1 className="text-3xl font-semibold">Editor</h1>
+			<RichTextEditor
+				label="Document"
+				onChange={(document) => {
+					setWords(JSON.stringify(document).split(/\s+/).length);
+				}}
+			/>
+			<p aria-live="polite" className="text-sm text-muted-foreground">
+				{words} tokens
+			</p>
+		</div>
+	);
+}

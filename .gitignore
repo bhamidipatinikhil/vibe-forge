@@ -1,0 +1,11 @@
+# vibe-forge repository (the Copier template itself). The generated project's
+# ignore rules live in template/.gitignore and are copied into every project.
+node_modules/
+.direnv/
+result
+result-*
+*.log
+
+# local test output of `copier copy ... . out` / `tests` runs
+/out/
+/.copier-test/

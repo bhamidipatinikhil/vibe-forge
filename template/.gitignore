@@ -1,0 +1,36 @@
+# Build and tool output
+node_modules
+dist
+reports/
+coverage
+.stryker-tmp
+.vitest/
+*.log
+
+# Generated web sources (scripts/gen.ts writes them before typecheck, lint and tests)
+src/ui/routeTree.gen.ts
+src/ui/paraglide/
+.content-collections/
+.tanstack/
+
+# Local Postgres cluster (just db-up)
+.data/
+
+# Nix / direnv
+.direnv/
+result
+
+# Secrets: only the example file is committed (decrypted sops output lives in secrets/*.dec.env)
+.env
+.env.*
+!.env.example
+secrets/*.dec.env
+
+# Ephemeral pipeline scratchpads (pipelines/, offload-context dumps)
+.scratch/
+
+# Agent-local state
+.claude/worktrees/
+.claude/settings.local.json
+
+.DS_Store

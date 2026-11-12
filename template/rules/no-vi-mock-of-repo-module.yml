@@ -1,0 +1,29 @@
+id: no-vi-mock-of-repo-module
+language: TypeScript
+severity: error
+message: 'Do not vi.mock() an in-repo module; mock only process boundaries (HTTP via MSW, time via fake timers).'
+note: 'A test that mocks its own code base only proves the mock. Inject the collaborator instead, or test through the real module.'
+rule:
+  any:
+    - pattern: vi.mock($PATH)
+    - pattern: vi.mock($PATH, $FACTORY)
+    - pattern: vi.doMock($PATH)
+    - pattern: vi.doMock($PATH, $FACTORY)
+constraints:
+  PATH:
+    regex: "^['\"`]\\.\\.?/"
+---
+id: no-vi-mock-of-repo-module-tsx
+language: Tsx
+severity: error
+message: 'Do not vi.mock() an in-repo module; mock only process boundaries (HTTP via MSW, time via fake timers).'
+note: 'A test that mocks its own code base only proves the mock. Inject the collaborator instead, or test through the real module.'
+rule:
+  any:
+    - pattern: vi.mock($PATH)
+    - pattern: vi.mock($PATH, $FACTORY)
+    - pattern: vi.doMock($PATH)
+    - pattern: vi.doMock($PATH, $FACTORY)
+constraints:
+  PATH:
+    regex: "^['\"`]\\.\\.?/"

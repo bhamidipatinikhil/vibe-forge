@@ -1,0 +1,73 @@
+# .github/workflows/golden-prompt.yml — an acceptance test for the vibe process itself.
+# Weekly (and on demand, when the ANTHROPIC_API_KEY secret exists): render a fresh default-web project, give an
+# unattended Claude run the documented worked-example brief (COMPLETE_GUIDE.md chapter 9, the "notes" feature) with
+# a hard budget cap, then require the project's full gate to be green afterwards. This is the template's own
+# pass/fail signal that a from-scratch agent run can actually work here — catching drift in prompts, hooks, gates
+# or model behaviour that file-level tests cannot see. It runs in CI, never on a host, and skips cleanly (with a
+# notice) when the secret is absent, so forks and fresh templates are green without it.
+name: golden-prompt
+on:
+  schedule:
+    - cron: "0 4 * * 6"            # Saturdays, before gate-flake-rate
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  golden-prompt:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Skip cleanly when no API key is configured
+        if: env.ANTHROPIC_API_KEY == ''
+        run: |
+          echo "::notice::ANTHROPIC_API_KEY is not set; the golden-prompt smoke is skipped. Add the secret to enable the weekly agent-run acceptance test."
+      - uses: DeterminateSystems/determinate-nix-action@92957199488000b908fdad19f63711000965d8f3 # v3.24.1
+        if: env.ANTHROPIC_API_KEY != ''
+      - uses: DeterminateSystems/flakehub-cache-action@3ac6f3c19fc52eeb1408fd434bd1b4ed4266bf25 # v3.24.1
+        if: env.ANTHROPIC_API_KEY != ''
+      - name: Render a fresh default-web project and bootstrap it
+        if: env.ANTHROPIC_API_KEY != ''
+        env:
+          CI: "1"
+        run: |
+          nix run github:NixOS/nixpkgs/nixos-26.05#copier -- copy --trust --defaults --vcs-ref HEAD \
+            --data-file tests/answers/default-web.yml "$GITHUB_WORKSPACE" "$RUNNER_TEMP/out"
+          cd "$RUNNER_TEMP/out"
+          git init -q -b main && git add -A
+          nix develop .#quiet -c pnpm install --no-frozen-lockfile
+          nix develop .#quiet -c bash scripts/bootstrap-generated.sh
+          git add -A && git -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false commit -qm "chore: scaffold from vibe-forge"
+          nix develop .#quiet -c pnpm install --frozen-lockfile
+      - name: Run the worked-example brief unattended (budget-capped)
+        if: env.ANTHROPIC_API_KEY != ''
+        working-directory: ${{ runner.temp }}/out
+        env:
+          CI: "1"
+        run: |
+          nix develop .#quiet -c bash scripts/agent-run.sh --max-budget-usd 5 \
+            "Implement private notes: a notes table (id, user_id, body, created_at), GET/POST /api/v1/notes and
+            DELETE /api/v1/notes/{id} scoped to the signed-in user, a /notes page. Follow .claude/rules/modules.md
+            (a module in src/modules/notes). Acceptance: an e2e test signs up, adds and deletes a note; the
+            access matrix covers every new route. Run just check and paste its last lines as evidence."
+      - name: The gate must be green after the agent's run
+        if: env.ANTHROPIC_API_KEY != ''
+        working-directory: ${{ runner.temp }}/out
+        env:
+          CI: "1"
+        run: |
+          nix develop .#quiet -c just check > "$RUNNER_TEMP/gate.log" 2>&1 || {
+            echo "::error::the gate is red after the golden prompt; tail:"
+            tail -n 60 "$RUNNER_TEMP/gate.log"
+            exit 1
+          }
+          tail -n 20 "$RUNNER_TEMP/gate.log" >> "$GITHUB_STEP_SUMMARY"

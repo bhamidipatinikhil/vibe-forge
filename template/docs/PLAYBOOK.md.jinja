@@ -1,0 +1,89 @@
+# Playbook: vibe coding on this template
+
+## 0. Day 0 (once per project, ~15 minutes)
+1. `new-project.sh <dir>`{%- if harness in ['claude', 'both'] %}; open `claude`, run `/sandbox` and confirm the Dependencies tab is green (bubblewrap, socat){%- endif %}{%- if harness in ['opencode', 'both'] %}; open `opencode` from the dev shell{%- endif %}.
+2. Enable CodeQL default setup (security-extended) and a ruleset on `main`: require `ci / gates`, `secpass / *`,
+   `supply-chain / *` as status checks, require a PR, block force pushes, enable the merge queue.
+3. Add `GH_TOKEN_FOR_UPDATES` for template-update.yml: a PAT with the `repo` and `workflow` scopes (fine-grained: Contents, Pull
+   requests, Issues and Workflows read and write here, Contents read on the template). The workflow clones the template with it,
+   private template repositories included, pushes the update branch (template updates often change `.github/workflows/*`, which
+   GitHub refuses from a token without the workflow scope) and creates the `template-update` label on first run; create the label
+   by hand with `gh label create template-update` only if that step failed. The job always updates to the template's `main`.
+   Connect Renovate; create the accounts in `docs/services.md` (Neon, Resend, Grafana Cloud, Sentry, Better Stack, …)
+   and put their values (`DATABASE_URL`, `BETTER_AUTH_SECRET`, `RESEND_API_KEY`, `OTEL_*`, `SENTRY_DSN`) in `secrets/*.enc.env`
+   (sops + age: put your age public key in `.sops.yaml` first) — never in a committed or printed file. Add the production
+   `DATABASE_URL` (the direct, unpooled URL) as a repository secret for `deploy.yml`'s migration step.
+4. Read `docs/decisions/0002-stack.md` (shipped with the template: the stack, the holds, what is not used on purpose) and
+   add the per-project choices the template cannot make in a new ADR: deploy target, backups (Neon 6 h free history vs
+   PITR), regulatory scope (EU B2C ⇒ EAA/WCAG 2.2 AA + GDPR).
+5. Give the agent its own GitHub identity, so everything it does is a pull request you review:
+   - create a machine user (a second GitHub account; one per person is allowed for automation) and invite it to the
+     repository with **Write** access, not Maintain or Admin;
+   - give it a fine-grained token scoped to this repository: Contents and Pull requests read/write, nothing else; store it in
+     its own `gh` config (`GH_CONFIG_DIR=~/.config/gh-agent gh auth login --with-token`) and start the agent with that
+     `GH_CONFIG_DIR` and `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL` (and the committer pair) set to the machine user, e.g. in a
+     shell alias, never in a committed file;
+   - in the `main` ruleset, require one approving review and "require review from Code Owners": the machine user cannot
+     approve its own pull requests, so nothing it writes reaches `main` without you.
+6. Delete every line of AGENTS.md the repo already makes obvious. Keep it under 60 lines. Review it in PRs like code.
+
+## 1. Pick the process by the cost of being wrong (never apply the heavy tier to a small task)
+- Tier A, trivial (typo, config, one-file fix, < 50 lines): a precise prompt that names the file and the symptom
+  ("look at token refresh in src/auth/, write a failing test that reproduces it, then fix it"). No spec. Gate + reviewer still run.
+- Tier B, feature (one session, < 400 lines): interview-to-spec. Prompt: "I want X but haven't thought it through.
+  Interview me until you could write the spec, then write it to plans/<slug>.md with acceptance tests and the files you expect to touch."
+  Review the plan, not the diff. Start a fresh session (`/clear`) to implement from the plan; one task per session.
+- Tier C, multi-session or risky (schema, auth, payments, public API): {%- if harness in ['claude', 'both'] %} `claude --worktree <slug>`,{%- else %} a separate git worktree or branch,{%- endif %} OpenSpec `/opsx:propose` for the delta
+  spec (or Spec Kit if you want its full gated pipeline), plan mode by default, ADR before touching a boundary, CODEOWNERS review of migrations.
+{%- if harness in ['claude', 'both'] %}
+- Unattended (batch migrations, overnight loops): `claude --bare -p … --settings .claude/ci-settings.json --setting-sources user
+  --permission-mode dontAsk --allowedTools "Read,Edit,Bash(git add *),Bash(git commit *)" --max-turns 20 --max-budget-usd 5
+  --output-format json --json-schema …`, inside `srt claude` or the devcontainer, never on your host. Iteration caps always.
+  `.claude/ci-settings.json` holds the unattended policy (deny list, sandbox, guard/verify-install/gates hooks) and deliberately no Edit
+  allow rule: grant what the task needs with `--allowedTools`. `--settings` overlays the settings files rather than replacing them, and
+  `--bare` skips hooks, skills, subagents, plugins, MCP servers and CLAUDE.md but still reads the project's settings files, so
+  `--setting-sources user` keeps `.claude/settings.json`'s `ask` rules and any `settings.local.json` out of the run; under `dontAsk`
+  everything else that would prompt is denied. Check the first run with `--output-format stream-json --verbose --include-hook-events`: the guard hook must appear. For scripted runs use `scripts/agent-run.sh`, which wraps this and validates the JSON output.
+{%- endif %}
+{%- if harness in ['opencode', 'both'] %}
+- Unattended (batch migrations, overnight loops): `opencode run "<task>"` in CI or a container, never on your host; bound the task yourself (state what done means and what not to touch), run the gate afterwards, and read the output before merging anything.
+{%- endif %}
+- Borrowing a feature from another codebase (a clone, an open-source app): this project is the hub; the other repository is a
+  reference, never a source to merge.
+  - `git clone --depth 1` it outside the project (`~/refs/<name>`){%- if harness in ['claude', 'both'] %} and start `claude --add-dir ~/refs/<name>`{%- endif %}.
+  - Run {%- if harness in ['claude', 'both'] %} `/study-reference ~/refs/<name>` for its feature list, then `/study-reference ~/refs/<name> <feature>` for{%- endif %} `plans/<slug>.md`, with the licence recorded and their stack translated to this one{%- if harness in ['opencode', 'both'] %} (OpenCode: read the reference's README and docs directly, then write the same `plans/<slug>.md`){%- endif %}.
+  - Implement from the plan as tier B or C in a fresh session: one borrowed feature per PR, behind a flag.
+  - Never install or run the reference.
+  - Don't paste a generic architecture prompt ("a /config folder", "an event bus", "fallback defaults"): the structure
+    here is enforced, and ADR 0002 says why those patterns are left out.
+
+## 2. The loop for every task
+1. Brief: one fully specified message (multi-turn drip-feeding costs ~39% in the research). Name files, inputs, expected outputs,
+   the acceptance tests, and "ask at most 3 questions if a listed item is missing".
+2. Implement: watch the first minute; press Esc the moment it drifts; after two failed corrections, {%- if harness in ['claude', 'both'] %} `/clear`{%- else %} start a fresh session{%- endif %} and rewrite the brief.
+3. Verify: the Stop hook runs `just check`; ask for evidence (the command and its output), not a summary.
+4. Review: `/code-review low` in a fresh subagent, then `@reviewer` against the plan. Fix only findings that affect correctness;
+   a reviewer told to find problems always finds something.
+5. Ship: small conventional commits; PR body = plan link + commands run + their output. Let the merge queue run `just ci`.
+6. Record: if you corrected the agent twice for the same thing, add one line to AGENTS.md or a `.claude/rules/` file;
+   if a rule must hold every time, make it a hook or a lint rule instead of a sentence.
+
+## 3. Rituals
+- Weekly: merge the Renovate and template-update PRs (review `.rej` conflicts); check the Stryker full run (`ci.yml`, Monday schedule) and the k6 soak (planned workflow; until then `just load`, or `k6 run --vus 20 --duration 3h -e BASE_URL=... tests/load/smoke.js`).
+{%- if harness in ['claude', 'both'] %}
+- Monthly: `claude --bare -p "find duplicated or dead code and propose a refactor plan" --max-budget-usd 3` → PR; read `/usage` for cost per merged change.
+{%- endif %}
+- Monthly: fill `docs/metrics.md` (commits, first-pass CI rate, review-rework ratio, PR size — `just metrics` prints the commit part).
+- Quarterly: {%- if harness in ['claude', 'both'] %}`/doctor prompt-audit`; re-check `/sandbox`; {%- endif %}prune AGENTS.md and rules; restore-drill from backups; run the distill ritual over `docs/glossary.md` and `docs/registry.md`; bump the TS 7 migration ticket.
+- After a model release: re-read AGENTS.md for rules that worked around an old model's limits and delete them.
+
+## 4. When the agent fights a gate
+- It edits a test to make it pass: reject; the test is the spec. Ask why the behaviour changed.
+- It asks to install a package: check `pnpm view <name> time.created`, downloads and maintainers; prefer existing deps; one-line justification in the PR.
+- It wants `--no-frozen-lockfile`, `nix flake update`, `rm -rf`, `git push --force` or to edit `.claude/`: the hooks say no. You do those by hand, deliberately.
+- It reports "all tests pass" without output: rerun `just check` yourself; agents have misreported test results in documented incidents.
+
+## 5. Cost and context
+- One task per session; `/clear` is free. Keep MCP servers off unless a task needs one. Haiku for subagents doing simple jobs.
+- Context files cost ~20% per task; every line in AGENTS.md is paid for on every request. Prefer path-scoped rules and on-demand skills.
+- Track: $ per merged change, first-pass CI pass rate, review-rework ratio, PR size. Throughput alone rewards what inflates review burden.

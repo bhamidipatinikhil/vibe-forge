@@ -1,0 +1,1 @@
+# No secrets are copied into worktrees: run sops exec-env / op run inside each worktree.

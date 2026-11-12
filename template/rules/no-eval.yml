@@ -1,0 +1,21 @@
+id: no-eval
+language: TypeScript
+severity: error
+message: 'eval() and new Function() execute strings as code; never use them.'
+note: 'Parse data with a Zod schema; dispatch behaviour with a lookup table or an exhaustive switch.'
+rule:
+  any:
+    - pattern: eval($$$ARGS)
+    - pattern: globalThis.eval($$$ARGS)
+    - pattern: new Function($$$ARGS)
+---
+id: no-eval-tsx
+language: Tsx
+severity: error
+message: 'eval() and new Function() execute strings as code; never use them.'
+note: 'Parse data with a Zod schema; dispatch behaviour with a lookup table or an exhaustive switch.'
+rule:
+  any:
+    - pattern: eval($$$ARGS)
+    - pattern: globalThis.eval($$$ARGS)
+    - pattern: new Function($$$ARGS)

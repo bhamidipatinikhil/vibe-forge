@@ -1,0 +1,173 @@
+set shell := ["bash", "-euo", "pipefail", "-c"]
+default: check
+
+# The one gate. lefthook pre-push, the Claude `Stop` hook and CI all run exactly `nix develop .#quiet -c just check`.
+check: {% if kind == 'web' %}gen {% endif %}typecheck lint test deadcode arch dup docs db-check
+
+{%- if kind == 'web' %}
+# Generated web sources (route tree, Paraglide messages, content collections), git-ignored; every gate below reads them.
+gen:
+    pnpm exec tsx scripts/gen.ts
+{%- endif %}
+typecheck:
+    pnpm exec tsc --noEmit
+    pnpm exec tsc --noEmit -p tsconfig.build.json
+lint: shellcheck squawk
+    pnpm exec biome ci .
+    pnpm exec eslint . --max-warnings 0
+    pnpm exec ast-grep scan
+    pnpm exec ast-grep test --skip-snapshot-tests
+test:
+    pnpm exec vitest run --coverage --typecheck
+deadcode:
+    pnpm exec knip
+    pnpm exec knip --production
+arch:
+    pnpm exec depcruise src --config .dependency-cruiser.cjs
+# Clones new since origin/main fail (jscpd 5.4.2 --baseline-from-ref); a checkout without origin/main scans the whole tree. No silent fallback.
+dup:
+    if git rev-parse -q --verify origin/main >/dev/null; then pnpm exec jscpd src --baseline-from-ref origin/main --fail-on-new-clones; else pnpm exec jscpd src; fi
+# Every generated, committed file must match its source: openapi.json (routes), .env.example (env schemas); plus the
+# API contract (oasdiff) and the docs-with-code rule.
+docs: env-check api-diff
+    pnpm exec typedoc --treatValidationWarningsAsErrors
+    pnpm exec tsx scripts/emit-openapi.ts --check
+    bash scripts/docs-drift.sh
+env-check:
+    pnpm exec tsx scripts/env-example.ts --check
+# db/schema.sql and src/infra/db/schema.gen.ts must follow from migrations/ (applied to a throwaway cluster).
+db-check:
+    pnpm exec tsx scripts/db.ts check
+
+# Shell scripts: the Claude hooks and scripts/*.sh (tests for the hooks themselves run in `just test`).
+shellcheck:
+    shellcheck scripts/*.sh{% if harness in ['claude', 'both'] %} .claude/hooks/*.sh{% endif %}
+# Postgres migration lint (.squawk.toml): files changed since origin/main, or every migration without origin/main.
+squawk:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if git rev-parse -q --verify origin/main >/dev/null; then
+      mapfile -t files < <(git diff --name-only --diff-filter=ACMR origin/main -- 'migrations/*.sql'; git ls-files --others --exclude-standard -- 'migrations/*.sql')
+    else
+      mapfile -t files < <(git ls-files --cached --others --exclude-standard -- 'migrations/*.sql')
+    fi
+    if [ "${{ "{#" }}files[@]}" -eq 0 ]; then echo "squawk: no changed migrations"; exit 0; fi
+    squawk "${files[@]}"
+# Breaking API changes against origin/main's openapi.json fail, unless a commit since origin/main carries
+# "#api-break <reason>" in its body (then they are printed as a warning). No origin/main: nothing to compare.
+api-diff:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! git rev-parse -q --verify origin/main >/dev/null || ! git cat-file -e origin/main:openapi.json 2>/dev/null; then
+      echo "api-diff: no origin/main:openapi.json to compare with"; exit 0
+    fi
+    base=$(mktemp); trap 'rm -f "$base"' EXIT
+    git show origin/main:openapi.json >"$base"
+    if git log --format=%B origin/main..HEAD | grep -q '#api-break'; then
+      oasdiff breaking "$base" openapi.json --fail-on ERR || echo "api-diff: breaking changes accepted by #api-break"
+    else
+      oasdiff breaking "$base" openapi.json --fail-on ERR
+    fi
+
+# Slow oracles: CI, and `just ci` locally before a release.
+ci: check mutation sast secrets licenses{% if kind == 'web' %} size lighthouse{% endif %}
+# Two runs: the whole of src/ at break 60, then src/domain alone at break 80 (stryker.domain.config.json). One shared
+# Postgres for every Stryker worker (scripts/with-pg.ts). Stryker runs vitest.unit.config.ts (Node tests only).
+mutation:
+    pnpm exec tsx scripts/with-pg.ts -- pnpm exec stryker run --incremental
+    pnpm exec tsx scripts/with-pg.ts -- pnpm exec stryker run stryker.domain.config.json --incremental
+# One registry rule demands minimumReleaseAge >= 10080; pnpm-workspace.yaml deliberately keeps the design's 4320 (3 days; the pins were chosen against it), so that single rule is excluded.
+sast:
+    semgrep scan --error --exclude-rule package_managers.pnpm.pnpm-missing-minimum-release-age.pnpm-minimum-release-age --config p/owasp-top-ten --config p/typescript --config p/nodejs --config p/react --config p/secrets
+# gitleaks (regex) and TruffleHog (live verification; --fail exits 183 on a hit) over the full git history. The nixpkgs wrapper already passes --no-update.
+secrets:
+    gitleaks git --no-banner --redact
+    trufflehog git file://. --results=verified,unknown --fail
+# SPDX allowlist over production dependencies (keep in sync with supply-chain.yml). An SPDX "A OR B" expression passes
+# when any branch is allowed. Named exceptions, each reviewed in docs/decisions/0002-stack.md: sentry (FSL-1.1-Apache-2.0,
+# the Sentry CLI that @sentry/node ships for source maps; it converts to Apache-2.0 after two years).
+licenses:
+    pnpm licenses list --json --prod | jq -e '[to_entries[] | select(.key | ltrimstr("(") | rtrimstr(")") | split(" OR ") | any(test("^(MIT|MIT-0|ISC|Apache-2.0|BSD-2-Clause|BSD-3-Clause|0BSD|MPL-2.0|CC0-1.0|CC-BY-4.0|Unlicense|BlueOak-1.0.0|OFL-1.1|Python-2.0)$")) | not) | select([.value[].name] - ["sentry"] | length > 0) | .key] | length == 0'
+{%- if with_playwright %}
+# Playwright (tests/e2e, tests/security, tests/smoke) against the production build on a throwaway Postgres.
+e2e: build
+    pnpm exec playwright test
+{%- endif %}
+build:
+    pnpm build
+{%- if kind == 'web' %}
+# Bundle budgets (.size-limit.json) on the built client.
+size: build
+    pnpm exec size-limit
+# Lighthouse CI (lighthouserc.json): accessibility, SEO and best practices >= 0.95 fail the run; performance warns.
+lighthouse: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    CHROME_PATH="$(node -p "require('playwright').chromium.executablePath()")"
+    export CHROME_PATH
+    pnpm exec tsx scripts/with-pg.ts -- bash -c 'LOG_LEVEL=warn node --import ./dist/node/instrumentation.js dist/node/index.js & app=$!; trap "kill $app; wait $app" EXIT; for _ in $(seq 1 60); do curl -fsS http://127.0.0.1:3000/readyz >/dev/null 2>&1 && break; sleep 0.5; done; pnpm exec lhci autorun'
+{%- endif %}
+bench:
+    pnpm exec vitest bench
+
+# Local services. db-up keeps a cluster in .data/pg on 127.0.0.1:54329 (the DATABASE_URL default in src/env.ts).
+db-up:
+    pnpm exec tsx scripts/db.ts up
+db-down:
+    pnpm exec tsx scripts/db.ts down
+# Apply new migrations to the local database, then regenerate db/schema.sql and the Kysely types.
+db-migrate: db-up db-generate
+db-generate:
+    pnpm exec tsx scripts/db.ts generate
+# A new expand-only migration file: just db-new add_widgets
+db-new name:
+    dbmate --migrations-dir migrations new {{ '{{' }}name{{ '}}' }}
+# Mailpit catches local mail (web UI http://127.0.0.1:8025): run it, then the app with MAILPIT_URL=http://127.0.0.1:8025.
+mail:
+    mailpit --listen 127.0.0.1:8025 --smtp 127.0.0.1:1025
+# k6 smoke test (tests/load/smoke.js) against BASE_URL (default: a local production build on a throwaway Postgres).
+load: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "${BASE_URL:-}" ]; then k6 run -e BASE_URL="$BASE_URL" tests/load/smoke.js; exit; fi
+    pnpm exec tsx scripts/with-pg.ts -- bash -c 'LOG_LEVEL=warn node --import ./dist/node/instrumentation.js dist/node/index.js & app=$!; trap "kill $app; wait $app" EXIT; for _ in $(seq 1 60); do curl -fsS http://127.0.0.1:3000/readyz >/dev/null 2>&1 && break; sleep 0.5; done; k6 run tests/load/smoke.js'
+
+# Version agreement between Nix, package.json and installed binaries.
+doctor:
+    test "$(pnpm --version)" = "$(jq -r '.packageManager' package.json | sed 's/^pnpm@//')"
+    test "$(node --version | tr -d v | cut -d. -f1)" = "$NODE_MAJOR"
+    [ -z "${PLAYWRIGHT_VERSION:-}" ] || test "$(node -p "require('@playwright/test/package.json').version")" = "$PLAYWRIGHT_VERSION"
+{%- if kind == 'web' %}
+    test "$(node -p "require('playwright/package.json').version")" = "$PLAYWRIGHT_VERSION"
+{%- endif %}
+    test "$(pg_dump --version | sed -E 's/.* ([0-9]+)\..*/\1/')" = "18"
+    {%- if harness in ['claude', 'both'] %}
+    claude --version
+    {%- endif %}
+    {%- if harness in ['opencode', 'both'] %}
+    opencode --version
+    {%- endif %}
+    @echo "doctor OK. Once per machine: open /sandbox in Claude Code and confirm bubblewrap + socat are green."
+
+# Distill: promote built components into docs/registry.md and docs/glossary.md (human approval gate).
+distill:
+    @echo "distill: show the diff of docs/registry.md and docs/glossary.md, get human approval, then commit."
+    @git --no-pager diff -- docs/registry.md docs/glossary.md || true
+
+# Harvest init: start an ephemeral scratchpad for a feature's raw reference material.
+harvest-init feature:
+    mkdir -p ".scratch/pipelines/{{ feature }}/inputs" ".scratch/pipelines/{{ feature }}/assets"
+    @if [ ! -f ".scratch/pipelines/{{ feature }}/CATALOG.md" ]; then \
+      printf '# Harvested Component & Metaphor Catalog: %s\n\n> Ephemeral discovery file. Selected components are mediated into docs/registry.md; the rest is pruned.\n\n## Sources Inspected\n- \n\n## Categorized Components\n| ID | Category | Name | Source | Candidate Scope | Mechanism / Format | Notes |\n|---|---|---|---|---|---|---|\n' "{{ feature }}" > ".scratch/pipelines/{{ feature }}/CATALOG.md"; \
+    fi
+    @echo "harvest workspace ready at .scratch/pipelines/{{ feature }}/"
+
+# Prune: garbage-collect a feature's ephemeral scratchpad after distillation.
+prune-scratch feature:
+    rm -rf ".scratch/pipelines/{{ feature }}"
+    @echo "pruned .scratch/pipelines/{{ feature }}/"
+
+# Metrics: commit counts per month (docs/metrics.md holds the full table).
+metrics:
+    @echo "commits per month (last 12):"
+    @git log --format='%ad' --date=format:'%Y-%m' | sort | uniq -c | sort -k2

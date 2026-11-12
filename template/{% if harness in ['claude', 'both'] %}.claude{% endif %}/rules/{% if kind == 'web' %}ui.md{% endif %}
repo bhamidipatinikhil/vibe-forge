@@ -1,0 +1,12 @@
+---
+paths:
+  - "src/ui/**"
+  - "messages/**"
+  - "content/**"
+---
+- The UI never imports `src/app`, `src/infra`, `src/env.ts` or Node built-ins (dependency-cruiser): it calls the documented HTTP API through `src/ui/lib/api.ts`, with TanStack Query for reads and TanStack Form + Zod for forms.
+- No TanStack Start server functions or server routes (`createServerFn`, `server: { handlers }`): ast-grep fails the gate. Add a Hono route instead.
+- Components: start from `src/ui/components/ui` (shadcn on Base UI; add more with `pnpm dlx shadcn@4.23.0 add <name>`, you will be asked to confirm). Use react-aria-components only for hard widgets (comboboxes, date pickers, grids).
+- Every user-visible string is a message in `messages/*.json` (Paraglide `m.key()`); every page sets its `head()` title. Accessibility is a gate: axe in `tests/e2e`, jsx-a11y in ESLint, Lighthouse ≥ 0.95 in `just ci`.
+- The CSP is enforced with a per-request nonce: no inline `<script>` or `<style>` written by hand, no `dangerouslySetInnerHTML`; structured data goes through `src/ui/seo/json-ld.ts`.
+- Component tests run in the browser (`*.test.tsx`, Vitest browser mode): render with `vitest-browser-react` and query by role and label.

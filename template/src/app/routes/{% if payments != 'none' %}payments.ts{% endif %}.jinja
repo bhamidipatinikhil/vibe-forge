@@ -1,0 +1,95 @@
+import { createRoute, z } from "@hono/zod-openapi";
+import type { Result } from "neverthrow";
+import { logger } from "../../logger.js";
+import { ErrorResponseSchema } from "../../schemas/error.js";
+import type { App } from "../ports.js";
+
+/** A verified webhook delivery. */
+export interface WebhookEvent {
+	/** Provider event type, e.g. `payment.captured` or `order.paid`. */
+	readonly type: string;
+}
+
+/** Verifies the signature of a payment-provider webhook (src/infra/payments.ts). */
+export interface WebhookVerifier {
+	/**
+	 * Checks the signature over the raw body and parses the event.
+	 * @param rawBody - The request body exactly as received.
+	 * @param headers - The request headers carrying the signature.
+	 */
+	readonly verify: (
+		rawBody: string,
+		headers: Headers,
+	) => Promise<Result<WebhookEvent, "invalid-signature">>;
+}
+
+const error = (description: string) => ({
+	description,
+	content: { "application/json": { schema: ErrorResponseSchema } },
+});
+
+const webhookRoute = createRoute({
+	method: "post",
+	path: "/api/v1/webhooks/{{ payments }}",
+	tags: ["payments"],
+	summary: "{{ 'Razorpay' if payments == 'razorpay' else 'Polar' }} webhook (signature-verified)",
+	description:
+		"{{ 'Verifies X-Razorpay-Signature (HMAC-SHA256 of the raw body with the webhook secret)' if payments == 'razorpay' else 'Verifies the Standard Webhooks signature (webhook-id, webhook-timestamp, webhook-signature)' }} before anything is parsed. Handle each event idempotently: providers retry deliveries.",
+	request: {
+		body: {
+			content: { "application/json": { schema: z.looseObject({}) } },
+			required: true,
+		},
+	},
+	responses: {
+		200: {
+			description: "Accepted",
+			content: {
+				"application/json": {
+					schema: z.object({ received: z.literal(true) }).openapi("WebhookAck"),
+				},
+			},
+		},
+		400: error("The body is not a JSON object"),
+		401: error("Missing or invalid signature"),
+		503: error("The webhook secret is not configured"),
+	},
+});
+
+/**
+ * Registers `POST /api/v1/webhooks/{{ payments }}`.
+ * @param app - The application.
+ * @param verifier - Signature check; without it the route answers 503.
+ */
+export function registerPaymentWebhook(
+	app: App,
+	verifier: WebhookVerifier | undefined,
+): void {
+	app.openapi(webhookRoute, async (c) => {
+		if (verifier === undefined) {
+			return c.json(
+				{
+					error: {
+						code: "unavailable",
+						message: "Webhook secret is not configured",
+					},
+				},
+				503,
+			);
+		}
+		const event = await verifier.verify(await c.req.text(), c.req.raw.headers);
+		if (event.isErr()) {
+			return c.json(
+				{
+					error: {
+						code: "invalid_signature",
+						message: "Signature check failed",
+					},
+				},
+				401,
+			);
+		}
+		logger.info({ type: event.value.type }, "payment webhook received");
+		return c.json({ received: true as const }, 200);
+	});
+}

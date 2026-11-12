@@ -1,0 +1,100 @@
+# .github/workflows/deploy.yml
+# push main -> gates (same Nix steps as ci.yml) -> image (provenance + SBOM + attestation) -> deploy (production environment,
+# queued, never cancelled) -> smoke test (/readyz, then the Playwright smoke suite against production).
+# Environment protection rules (required reviewers, branch restriction) live in the repository's `production` environment.
+# Intentionally incomplete until you switch it on: `image` and `deploy` only run once the PRODUCTION_URL repository variable
+# is set, and the TODO(project) marker below (the deploy command for your platform) is yours to fill in; until then only
+# `gates` runs on every push to main. The image comes from the root Dockerfile; migrations run before the new image
+# takes traffic (expand-only, so the running version keeps working: .claude/rules/migrations.md).
+name: deploy
+on:
+  push: { branches: [main] }
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: production-deploy
+  # Never cancel a running production deploy: the newest push waits behind it (an older pending run is superseded by a newer
+  # one, which is what a deploy-latest pipeline wants). GitHub also documents `queue: max` (keep up to 100 pending runs), but
+  # actionlint <= 1.7.12 (the newest release, pinned in nixos-26.05) rejects that key, so adopt it only once actionlint knows it.
+  cancel-in-progress: false
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, id-token: write }   # id-token for FlakeHub Cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: DeterminateSystems/determinate-nix-action@92957199488000b908fdad19f63711000965d8f3 # v3.24.1
+      - uses: DeterminateSystems/flakehub-cache-action@3ac6f3c19fc52eeb1408fd434bd1b4ed4266bf25 # v3.24.1
+      - run: nix flake check
+      - run: nix develop .#quiet -c pnpm install --frozen-lockfile
+      - run: nix develop .#quiet -c just doctor
+      - run: nix develop .#quiet -c just ci
+        env: { CI: "1" }
+
+  image:
+    needs: gates
+    if: vars.PRODUCTION_URL != ''          # same switch as `deploy`: off until you enable deployments
+    runs-on: ubuntu-latest
+    permissions: { contents: read, id-token: write, attestations: write, packages: write }
+    outputs:
+      image: "${{ steps.name.outputs.image }}"
+      digest: "${{ steps.build.outputs.digest }}"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"   # ghcr.io requires a lowercase path
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .                # the root Dockerfile (env validation is skipped in its build stage only)
+          push: true
+          provenance: mode=max      # attestations require a registry push; public repos expose build-args, so use secret mounts
+          sbom: true
+          tags: "${{ steps.name.outputs.image }}:${{ github.sha }}"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: "${{ steps.name.outputs.image }}"
+          subject-digest: "${{ steps.build.outputs.digest }}"
+          push-to-registry: true
+
+  deploy:
+    needs: image
+    if: vars.PRODUCTION_URL != ''          # set the PRODUCTION_URL repository variable to enable deployments
+    runs-on: ubuntu-latest
+    permissions: { contents: read, id-token: write }   # id-token for FlakeHub Cache (and OIDC to your platform, if used)
+    environment:
+      name: production          # required reviewers + branch restriction live here (Pro/Team for private repos)
+      url: "${{ vars.PRODUCTION_URL }}"
+    env:
+      IMAGE: "${{ needs.image.outputs.image }}@${{ needs.image.outputs.digest }}"
+      PRODUCTION_URL: "${{ vars.PRODUCTION_URL }}"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: DeterminateSystems/determinate-nix-action@92957199488000b908fdad19f63711000965d8f3 # v3.24.1
+      - uses: DeterminateSystems/flakehub-cache-action@3ac6f3c19fc52eeb1408fd434bd1b4ed4266bf25 # v3.24.1
+      - run: nix develop .#quiet -c pnpm install --frozen-lockfile
+      - name: Migrate the database (expand-only migrations, before the new image takes traffic)
+        run: nix develop .#quiet -c dbmate --migrations-dir migrations --no-dump-schema --wait up
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }   # the production connection string (Neon: the direct, unpooled URL)
+      - name: Deploy
+        run: |
+          # TODO(project): replace with your deploy command, e.g.
+          #   flyctl deploy --image "$IMAGE"   |   wrangler deploy   |   vercel deploy --prod   |   kubectl set image ...
+          echo "::error::TODO(project): replace this step with the deploy command for $IMAGE"
+          exit 1
+      - name: Smoke test — readiness
+        run: |
+          for _ in $(seq 1 30); do curl -fsS "$PRODUCTION_URL/readyz" && break; sleep 5; done
+          curl -fsS "$PRODUCTION_URL/readyz"
+      # Workflows are copied verbatim for every Copier answer set; with_playwright=false renders neither @playwright/test nor
+      # tests/smoke, so the Playwright step is guarded at step level (the readiness poll above always runs).
+      - name: Smoke test — critical path (Playwright against production)
+        if: hashFiles('tests/smoke/**/*.spec.ts') != ''
+        run: nix develop .#quiet -c pnpm exec playwright test tests/smoke
+        env: { CI: "1", BASE_URL: "${{ vars.PRODUCTION_URL }}" }   # BASE_URL is the variable playwright.config.ts reads: it then skips its local webServer and targets production

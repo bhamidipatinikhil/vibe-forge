@@ -1,0 +1,33 @@
+packages: ["."]
+minimumReleaseAge: 4320          # minutes = 3 days (v11 default 1440); raise to 10080 if you can wait a week (then drop the --exclude-rule from the justfile sast recipe)
+minimumReleaseAgeExclude:        # exact versions only, each with its reason; delete an entry once it is older than minimumReleaseAge
+{%- if npm_scope %}
+  - "@{{ npm_scope }}/*"         # your own scope: publish and consume immediately
+{%- endif %}
+  # better-auth 1.7.15 is a security release (2026-11-01T09:14Z); the cooldown would hold it until 2026-11-04T09:14Z. REMOVE after that.
+  - better-auth@1.7.15
+  - "@better-auth/core@1.7.15"
+  - "@better-auth/telemetry@1.7.15"
+  - "@better-auth/kysely-adapter@1.7.15"
+  - "@better-auth/memory-adapter@1.7.15"
+  - "@better-auth/mongo-adapter@1.7.15"
+  - "@better-auth/prisma-adapter@1.7.15"
+  - "@better-auth/drizzle-adapter@1.7.15"
+strictDepBuilds: true            # fail on unreviewed install scripts (Shai-Hulud vector)
+allowBuilds:                     # explicit, reviewed allowlist; add sharp/@prisma/engines only when needed
+  esbuild: true                  # install.js fetches/validates the platform binary (tsx, vite)
+  "@ast-grep/cli": true          # postinstall.js validates the napi platform binary
+  protobufjs: false              # postinstall only prints a version-scheme warning; nothing to build
+  fsevents: false                # macOS-only optional dep (chokidar/vite); ships a prebuilt binary, the node-gyp rebuild is not needed
+blockExoticSubdeps: true
+trustPolicy: no-downgrade        # fail if a package's trust level (provenance) drops
+trustPolicyExclude:              # exact versions only, each reviewed
+  - semver@5.7.2                 # npm's own legacy 5.x/6.x backports, published (2023-07) after 7.x started carrying provenance;
+  - semver@6.3.1                 # pulled in by @babel/core (TanStack Start's build plugin) and lighthouse
+trustLockfile: false
+verifyDepsBeforeRun: install
+peerDependencyRules:
+  allowedVersions:
+    # eslint-plugin-jsx-a11y 6.10.2 (newest) declares eslint <=9; its rules run on ESLint 10 through @eslint/compat's
+    # fixupPluginRules (eslint.config.js) and tests/lint/jsx-a11y.test.ts proves they still fire. Drop with the next release.
+    eslint-plugin-jsx-a11y>eslint: "10"

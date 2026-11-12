@@ -1,0 +1,77 @@
+# .github/workflows/gate-flake-rate.yml — is the gate itself trustworthy?
+# Weekly (and on demand): render a fresh default-web project, then run its full `just check` gate three times in
+# the same checkout. A gate that passes and fails on identical code is a flaky gate; every red→green or green→red
+# flip between runs fails this job, because agents (and humans) cannot trust a gate that is not deterministic.
+# Results are also written to the job summary so the flake rate is visible over time.
+name: gate-flake-rate
+on:
+  schedule:
+    - cron: "0 5 * * 6"            # Saturdays, before template-test's Monday run
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  flake-rate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@92957199488000b908fdad19f63711000965d8f3 # v3.24.1
+      - uses: DeterminateSystems/flakehub-cache-action@3ac6f3c19fc52eeb1408fd434bd1b4ed4266bf25 # v3.24.1
+      - name: Render a fresh default-web project
+        run: |
+          nix run github:NixOS/nixpkgs/nixos-26.05#copier -- copy --trust --defaults --vcs-ref HEAD \
+            --data-file tests/answers/default-web.yml "$GITHUB_WORKSPACE" "$RUNNER_TEMP/out"
+      - name: Bootstrap it the way new-project.sh does
+        working-directory: ${{ runner.temp }}/out
+        env:
+          CI: "1"
+        run: |
+          git init -q -b main && git add -A
+          nix develop .#quiet -c pnpm install --no-frozen-lockfile
+          nix develop .#quiet -c bash scripts/bootstrap-generated.sh
+          git add -A && git -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false commit -qm "chore: scaffold from vibe-forge"
+          nix develop .#quiet -c pnpm install --frozen-lockfile
+      - name: Run just check three times on identical code
+        working-directory: ${{ runner.temp }}/out
+        env:
+          CI: "1"
+        id: runs
+        run: |
+          results=""
+          for i in 1 2 3; do
+            echo "::group::gate run $i"
+            if nix develop .#quiet -c just check > "run-$i.log" 2>&1; then
+              results="$results pass"
+              echo "run $i: PASS" >> "$GITHUB_STEP_SUMMARY"
+            else
+              results="$results FAIL"
+              echo "run $i: FAIL (tail below)" >> "$GITHUB_STEP_SUMMARY"
+              tail -n 40 "run-$i.log" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            echo "::endgroup::"
+          done
+          echo "results=$results" >> "$GITHUB_OUTPUT"
+      - name: Fail on any disagreement between runs
+        working-directory: ${{ runner.temp }}/out
+        run: |
+          results="${{ steps.runs.outputs.results }}"
+          echo "gate results:$results" >> "$GITHUB_STEP_SUMMARY"
+          passes=$(printf '%s' "$results" | grep -o pass | wc -l)
+          fails=$(printf '%s' "$results" | grep -o FAIL | wc -l)
+          if [ "$passes" -gt 0 ] && [ "$fails" -gt 0 ]; then
+            echo "::error::the gate is flaky: identical code produced pass and FAIL results ($results)"
+            exit 1
+          fi
+          if [ "$fails" -eq 3 ]; then
+            echo "::error::the gate failed all three times on a fresh scaffold: fix before release (template-test should have caught this)"
+            exit 1
+          fi
+          echo "gate is deterministic across 3 runs ($results)"

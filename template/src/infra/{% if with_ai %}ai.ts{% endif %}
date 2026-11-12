@@ -1,0 +1,61 @@
+import Anthropic from "@anthropic-ai/sdk";
+import { err, ok } from "neverthrow";
+import type { Summarizer } from "../app/routes/ai.js";
+
+/** Longest summary asked for; the route caps input length, this caps output. */
+const MAX_TOKENS = 16_000;
+
+const SYSTEM_PROMPT =
+	"You summarize text for a busy reader. Reply with the summary only: at most three sentences, plain text, in the language of the input.";
+
+/**
+ * A summarizer backed by the Claude Messages API. Thinking is always on for
+ * the default model, so effort (low: a summary is a routine task) is the
+ * depth control. Server-side refusal fallbacks are enabled: when the model
+ * declines, the API re-runs the request on a fallback model in the same call.
+ * @param apiKey - `ANTHROPIC_API_KEY`; unset leaves the feature off (the route answers 503).
+ * @param model - `ANTHROPIC_MODEL` (default claude-opus-5-5).
+ * @returns `{ ai }` to spread into the app options, or nothing.
+ */
+export function claudeSummarizer(
+	apiKey: string | undefined,
+	model: string,
+): { ai?: Summarizer } {
+	if (apiKey === undefined) {
+		return {};
+	}
+	const client = new Anthropic({ apiKey });
+	return {
+		ai: {
+			summarize: async (text) => {
+				try {
+					const response = await client.beta.messages.create({
+						model,
+						max_tokens: MAX_TOKENS,
+						betas: ["server-side-fallback-2026-07-01"],
+						fallbacks: "default",
+						output_config: { effort: "low" },
+						system: SYSTEM_PROMPT,
+						messages: [{ role: "user", content: text }],
+					});
+					if (response.stop_reason === "refusal") {
+						return err({ kind: "refused" as const });
+					}
+					const summary = response.content
+						.flatMap((block) => (block.type === "text" ? [block.text] : []))
+						.join("")
+						.trim();
+					return ok(summary);
+				} catch (e: unknown) {
+					if (e instanceof Anthropic.RateLimitError) {
+						return err({ kind: "busy" as const });
+					}
+					if (e instanceof Anthropic.APIError) {
+						return err({ kind: "upstream" as const });
+					}
+					throw e;
+				}
+			},
+		},
+	};
+}

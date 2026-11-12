@@ -1,0 +1,13 @@
+# Answer set for the template's own tests: the default service project.
+# Usage: nix run github:NixOS/nixpkgs/nixos-26.05#copier -- copy --trust --defaults --data-file tests/answers/default-service.yml . out
+project_name: Gate Test Service
+project_slug: gate-test-service
+github_owner: example-org
+npm_scope: ""
+kind: service
+node_major: 26
+with_playwright: true
+with_python: false
+with_devcontainer: false
+payments: none
+with_ai: false

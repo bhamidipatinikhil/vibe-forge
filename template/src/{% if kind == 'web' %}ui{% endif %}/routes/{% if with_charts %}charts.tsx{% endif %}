@@ -1,0 +1,30 @@
+import { createFileRoute } from "@tanstack/react-router";
+import type { ReactElement } from "react";
+import { PriceChart, SignupsChart } from "../components/charts";
+
+export const Route = createFileRoute("/charts")({
+	head: () => ({ meta: [{ title: "Charts" }] }),
+	component: Charts,
+});
+
+const SIGNUPS = [
+	{ label: "Mon", value: 12 },
+	{ label: "Tue", value: 19 },
+	{ label: "Wed", value: 7 },
+];
+
+const START = 1_798_761_600; // 2027-01-01T00:00:00Z
+const POINTS = Array.from({ length: 30 }, (_, day) => ({
+	time: START + day * 86_400,
+	value: 100 + Math.round(10 * Math.sin(day / 3)),
+}));
+
+function Charts(): ReactElement {
+	return (
+		<div className="grid gap-8">
+			<h1 className="text-3xl font-semibold">Charts</h1>
+			<SignupsChart title="Sign-ups per day" data={SIGNUPS} />
+			<PriceChart title="Daily value over 30 days" points={POINTS} />
+		</div>
+	);
+}

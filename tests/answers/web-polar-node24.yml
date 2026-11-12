@@ -1,0 +1,15 @@
+# Answer set for the template's own tests: kind=web on Node 24 (Maintenance LTS) with the second payments option.
+# Usage: nix run github:NixOS/nixpkgs/nixos-26.05#copier -- copy --trust --defaults --data-file tests/answers/web-polar-node24.yml . out
+project_name: Gate Test Web Polar
+project_slug: gate-test-web-polar
+github_owner: example-org
+npm_scope: ""
+kind: web
+node_major: 24
+with_playwright: true
+with_python: false
+with_devcontainer: false
+payments: polar
+with_ai: false
+with_charts: false
+with_rich_text: false

@@ -1,0 +1,257 @@
+# .github/workflows/template-test.yml — the template tests itself.
+# 1. generate-and-gate: render a project from every answer set in tests/answers/, lint its rendered workflows
+#    (actionlint + zizmor: the Playwright / PRODUCTION_URL guards live there), bootstrap it the way new-project.sh
+#    does (first pnpm install --no-frozen-lockfile, which re-locks the shipped pnpm-lock.yaml when the answers change
+#    package.json; scaffold commit; frozen re-install) and run that project's own
+#    gates: nix flake check, just doctor, just ci (what its required `ci / gates` check runs) and, when Playwright
+#    was rendered, just e2e; for one project of each kind it also builds the production image (Dockerfile). A generated
+#    project must pass its own full gate on day one.
+# 2. update-path: generate from the previous v* tag, then `copier update` to HEAD and fail on any
+#    .rej file or conflict marker, so migration bugs surface here and not in downstream projects (a release documented as a
+#    manual upgrade in CHANGELOG.md runs install + doctor there, not just check).
+# 3. lint-template: shellcheck the bootstrap script, sanity-check the YAML, actionlint + zizmor on this workflow, and
+#    run template-update.yml's and ci.yml's drift scripts with stubs: updates always name the template's main.
+# Pattern: browniebroke/pypackage-template ci.yml + Copier "updating" docs. Actions are pinned to the same
+# full commit SHAs as the generated workflows (actions/checkout v7.0.1, determinate-nix-action and
+# flakehub-cache-action v3.24.1), so Renovate/Dependabot bump them together.
+# Nix tools never come from the flake registry's `nixpkgs` (nixpkgs-unstable on a runner, drifting independently of every
+# flake.lock): inside a rendered project `--inputs-from .` takes them from its own nixpkgs input (nixos-26.05; resolved
+# even before flake.lock exists, nothing is written), and where no flake exists yet (copier itself, lint-template) the
+# branch is named explicitly, github:NixOS/nixpkgs/nixos-26.05 (its copier 9.15.1 matches _min_copier_version 9.15.0).
+name: template-test
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  schedule:
+    - cron: "0 6 * * 1"          # weekly: catches rot from nixpkgs/npm/Claude Code drift
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  generate-and-gate:
+    name: generate-and-gate (${{ matrix.answers }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write            # FlakeHub Cache authenticates through the OIDC token
+    strategy:
+      fail-fast: false
+      matrix:
+        answers: [default-web, default-service, web-full, web-polar-node24, no-playwright-node24, python-scoped, service-opencode]
+    env:
+      ANSWERS: ${{ matrix.answers }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0               # copier reads the template's git tags
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@92957199488000b908fdad19f63711000965d8f3 # v3.24.1
+      - uses: DeterminateSystems/flakehub-cache-action@3ac6f3c19fc52eeb1408fd434bd1b4ed4266bf25 # v3.24.1
+      - name: Generate a project from tests/answers/${{ matrix.answers }}.yml at HEAD
+        run: |
+          # --vcs-ref HEAD: without it Copier renders the template's latest tag, not the commit under test.
+          # The workspace path is recorded as _src_path; it only has to resolve on this runner.
+          nix run github:NixOS/nixpkgs/nixos-26.05#copier -- copy --trust --defaults --vcs-ref HEAD \
+            --data-file "tests/answers/$ANSWERS.yml" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/out"
+      - name: Lint the rendered workflows (actionlint + zizmor)
+        working-directory: ${{ runner.temp }}/out
+        run: |
+          # Explicit file arguments: out/ is not a git repository yet, so actionlint cannot discover the workflows itself.
+          # zizmor from `medium` up, the level the generated supply-chain.yml job fails on; its one `low` note
+          # (adhoc-packages on `npm i -g sfw`, the Socket Firewall install) is deliberate.
+          # --inputs-from .: the linters come from the rendered flake's nixpkgs input, the versions the project itself pins.
+          nix shell --inputs-from . nixpkgs#actionlint nixpkgs#shellcheck nixpkgs#zizmor -c bash -c \
+            'actionlint -shellcheck=shellcheck .github/workflows/*.yml && zizmor --min-severity medium .github/workflows'
+      - name: Bootstrap the generated project the way new-project.sh does
+        working-directory: ${{ runner.temp }}/out
+        env:
+          CI: "1"
+        run: |
+          git init -q -b main && git add -A       # staged first: the flake fetcher copies only tracked files
+          nix flake check --no-build
+          # First install. The template ships pnpm-lock.yaml and flake.lock locked against default-web; answers that change
+          # package.json (every other set) re-lock here. --no-frozen-lockfile is explicit: with CI set, pnpm freezes an
+          # existing lockfile and the mismatch would fail with ERR_PNPM_OUTDATED_LOCKFILE instead of re-locking.
+          nix develop .#quiet -c pnpm install --no-frozen-lockfile
+          if [ "$ANSWERS" = default-web ]; then
+            git diff --exit-code -- pnpm-lock.yaml flake.lock   # day-one determinism: the shipped lock files are what the install used
+          fi
+          nix develop .#quiet -c bash scripts/bootstrap-generated.sh   # openapi.json and .env.example, as new-project.sh writes them
+          git add -A && git -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false commit -qm "chore: scaffold from vibe-forge"
+          nix develop .#quiet -c pnpm install --frozen-lockfile   # what ci.yml runs: the committed lockfile must match package.json
+      - name: Run the generated project's own gates
+        working-directory: ${{ runner.temp }}/out
+        env:
+          CI: "1"
+        run: |
+          nix develop .#quiet -c just doctor      # version-agreement checks (pnpm/node/playwright vs Nix)
+          nix develop .#quiet -c just ci          # the project's required `ci / gates` check: just check + mutation, sast, secrets, licenses
+          if [ -f playwright.config.ts ]; then    # rendered only with with_playwright: Playwright + axe e2e/security/smoke on the Nix Chromium
+            nix develop .#quiet -c just e2e
+          else
+            echo "no playwright.config.ts (with_playwright=false): just e2e has nothing to run"
+          fi
+      - name: Build the production image (Dockerfile) for one project of each kind
+        if: matrix.answers == 'default-web' || matrix.answers == 'default-service'
+        working-directory: ${{ runner.temp }}/out
+        run: docker build --tag "gate-test-$ANSWERS" .
+  update-path:
+    name: update-path (previous tag -> HEAD)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ANSWERS: default-service
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@92957199488000b908fdad19f63711000965d8f3 # v3.24.1
+      - uses: DeterminateSystems/flakehub-cache-action@3ac6f3c19fc52eeb1408fd434bd1b4ed4266bf25 # v3.24.1
+      - name: Generate from the previous tag, then `copier update` to HEAD
+        run: |
+          mkdir -p "$RUNNER_TEMP/upd"             # exists even when there is nothing to update from (next step needs the directory)
+          prev=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)
+          if [ -z "$prev" ]; then echo "no previous v* tag reachable from HEAD^; nothing to update from"; exit 0; fi
+          echo "copier update: $prev -> $GITHUB_SHA"
+          nix run github:NixOS/nixpkgs/nixos-26.05#copier -- copy --trust --defaults --vcs-ref "$prev" \
+            --data-file "tests/answers/$ANSWERS.yml" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/upd"
+          cd "$RUNNER_TEMP/upd"
+          git init -q -b main && git add -A && git -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false commit -qm "chore: scaffold from vibe-forge $prev"
+          nix run --inputs-from . nixpkgs#copier -- update --trust --defaults --conflict rej --vcs-ref HEAD   # copier from the project's own nixpkgs input
+          if find . -path ./.git -prune -o -name '*.rej' -print | grep -q . \
+             || grep -rl --exclude-dir=.git --exclude-dir=node_modules '^<<<<<<< ' . ; then
+            echo "::error::copier update from $prev to HEAD produced conflicts (see *.rej / conflict markers above)"; exit 1
+          fi
+          git add -A && git -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false commit -qm "chore: copier update to HEAD" || true
+      - name: Run the updated project's gates
+        working-directory: ${{ runner.temp }}/upd
+        env:
+          CI: "1"
+        run: |
+          if [ ! -f .copier-answers.yml ]; then echo "update-path skipped"; exit 0; fi
+          nix develop .#quiet -c pnpm install --no-frozen-lockfile   # the lockfile is project-owned (_skip_if_exists): after an update that touches package.json a human re-locks, so never frozen here; explicit because CI=1 would freeze the existing lockfile
+          nix develop .#quiet -c just doctor
+          # src/** and tests/** are project-owned (_skip_if_exists), so a release that changes their contract cannot be
+          # merged by `copier update` alone. Such a release says so in the template's CHANGELOG ("Manual upgrade from
+          # <tag>", with the steps in template/docs/upgrading/); from that tag the gate is skipped, from any later tag
+          # it runs again.
+          prev=$(git -C "$GITHUB_WORKSPACE" describe --tags --abbrev=0 --match 'v*' HEAD^)
+          if grep -q "Manual upgrade from $prev" "$GITHUB_WORKSPACE/CHANGELOG.md"; then
+            echo "::notice::the release after $prev is a documented manual upgrade (CHANGELOG.md); just check is not run on the update path"
+            exit 0
+          fi
+          nix develop .#quiet -c just check
+  lint-template:
+    name: lint-template
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@92957199488000b908fdad19f63711000965d8f3 # v3.24.1
+      # This repository has no flake, so the branch the generated flake pins is named explicitly (never the registry's nixpkgs).
+      - run: nix run github:NixOS/nixpkgs/nixos-26.05#shellcheck -- new-project.sh
+      - run: nix run github:NixOS/nixpkgs/nixos-26.05#yq-go -- . copier.yml tests/answers/*.yml >/dev/null   # YAML sanity
+      - run: nix shell github:NixOS/nixpkgs/nixos-26.05#actionlint github:NixOS/nixpkgs/nixos-26.05#shellcheck -c actionlint -shellcheck=shellcheck .github/workflows/template-test.yml
+      - run: nix run github:NixOS/nixpkgs/nixos-26.05#zizmor -- .github/workflows   # lint this workflow with the same tool the generated projects use
+      - name: template-update.yml always updates to the template's main, and explains its failures
+        # Its script, run with stub nix and gh in a repository with no remote (an update that changes nothing stops at
+        # `|| exit 0`, one that changes .copier-answers.yml at the refused push), then fed Copier's error messages: a
+        # quoting slip or a stale hint passes every linter but breaks or misleads every project.
+        run: |
+          yq() { nix run github:NixOS/nixpkgs/nixos-26.05#yq-go -- "$@"; }
+          wf=template/.github/workflows/template-update.yml
+          if grep -q TEMPLATE_REF "$wf"; then echo "::error::$wf must not read TEMPLATE_REF: projects always follow the template's main"; exit 1; fi
+          t="$RUNNER_TEMP/template-update"; mkdir -p "$t/bin"
+          yq '.jobs."copier-update".steps[] | select(has("run")) | .run' "$wf" > "$t/step.sh"
+          cat > "$t/bin/nix" <<'STUB'
+          #!/bin/sh
+          # records its arguments; update prints $STUB_ERR, records _commit $STUB_NEW (when set) and exits with $STUB_RC
+          printf '[%s]' "$@" >> "$STUB_ARGV"; echo >> "$STUB_ARGV"
+          case " $* " in
+            *" update "*) if [ -n "${STUB_ERR:-}" ]; then printf '%s\n' "$STUB_ERR" >&2; fi
+                          if [ -n "${STUB_NEW:-}" ]; then printf '_commit: %s\n' "$STUB_NEW" > .copier-answers.yml; fi
+                          exit "${STUB_RC:-0}" ;;
+          esac
+          STUB
+          printf '#!/bin/sh\nexit 0\n' > "$t/bin/gh"
+          printf '#!/bin/sh\necho 2000-01-01\n' > "$t/bin/date"   # the step's only date call is +%F; a fixed day, so midnight cannot split a check
+          chmod +x "$t/bin/nix" "$t/bin/gh" "$t/bin/date"
+          git init -q -b main "$t/project" && cd "$t/project"
+          answers() {   # answers <_commit>: what the project records on main
+            printf '_commit: %s\n' "$1" > .copier-answers.yml
+            git add -A && git -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false commit -qm "_commit: $1"
+          }
+          answers v0.1.0-1-gc17a61b
+          step() {   # step [<Copier's error> [<_commit after the update>]]: sets rc; the output is in $t/out
+            git checkout -q main; git branch -q -D chore/template-update-2000-01-01 2>/dev/null || true
+            : > "$t/argv"; rc=0
+            PATH="$t/bin:$PATH" STUB_ARGV="$t/argv" STUB_ERR="${1:-}" STUB_RC="${1:+1}" STUB_NEW="${2:-}" \
+              RUNNER_TEMP="$t" bash -e "$t/step.sh" > "$t/out" 2>&1 || rc=$?
+          }
+          expect() {   # expect <exit code> <text the step's output must contain>
+            if [ "$rc" != "$1" ] || ! grep -qF -- "$2" "$t/out"; then
+              echo "::error::template-update.yml step: want exit $1 and \"$2\", got exit $rc:"; cat "$t/out"; exit 1
+            fi
+          }
+          step   # nothing changed: no branch, no PR
+          want="[run][--inputs-from][.][nixpkgs#copier][--][update][--trust][--defaults][--conflict][rej][--vcs-ref][main]"
+          got="$(head -n 1 "$t/argv")"
+          if [ "$rc" != 0 ] || [ "$got" != "$want" ]; then echo "::error::exit $rc, copier got $got, want $want"; cat "$t/out"; exit 1; fi
+          echo "copier got: $got"
+          step "" v0.1.0-2-g1a2b3c4   # an update: committed, then the push is refused (no remote here)
+          expect 1 "::error::Pushing the update branch failed."
+          expect 1 "If git says non-fast-forward, the branch chore/template-update-2000-01-01 from an earlier run today still exists"
+          step "Stderr:       | error: pathspec 'main' did not match any file(s) known to git"
+          expect 1 "::error::The template repository has no main branch"
+          step "Stderr:       | error: pathspec 'v0.1.0-1-gc17a61b' did not match any file(s) known to git"
+          expect 1 "::error::The template commit this project records (v0.1.0-1-gc17a61b) is no longer in the template repository"
+          expect 1 "git push origin c17a61b:refs/heads/keep-c17a61b"
+          expect 1 "recopy --trust --defaults --overwrite --vcs-ref main"
+          step "You are downgrading from 0.1.0.post1.dev0+c17a61b to 0.1.0. Downgrades are not supported."
+          expect 1 "::error::The template's main counts as older than this project's template commit v0.1.0-1-gc17a61b"
+          step "Some other failure"; expect 1 "Some other failure"
+          if grep -q '::error::' "$t/out"; then echo "::error::an unknown Copier failure got a hint:"; cat "$t/out"; exit 1; fi
+          answers 9f8e7d1   # a bare sha (from an untagged template)
+          step "Stderr:       | error: pathspec '9f8e7d1' did not match any file(s) known to git"
+          expect 1 "git push origin 9f8e7d1:refs/heads/keep-9f8e7d1"
+          echo "the ::error:: hints match Copier's messages"
+      - name: ci.yml's template drift step compares the project's template commit with the template's main
+        # Its script, run against a local template repository: a _commit that is main's head (as a describe string, a
+        # lightweight or annotated tag, or a bare sha) is current; any other commit, or a tag the template lacks, is not.
+        run: |
+          t="$RUNNER_TEMP/drift"; mkdir -p "$t/project"
+          nix run github:NixOS/nixpkgs/nixos-26.05#yq-go -- '.jobs.gates.steps[] | select(.name == "Template drift (non-blocking)") | .run' \
+            template/.github/workflows/ci.yml > "$t/step.sh"
+          git init -q --bare "$t/template.git"; git init -q -b main "$t/template"
+          tg() { git -C "$t/template" -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false "$@"; }
+          publish() { tg push -q "$t/template.git" main --tags; head="$(tg rev-parse --short HEAD)"; }
+          tg commit -q --allow-empty -m a && tg tag v0.1.0
+          tg commit -q --allow-empty -m b && tg tag -a v0.2.0 -m v0.2.0 && old="$(tg rev-parse --short HEAD)"
+          tg commit -q --allow-empty -m c && publish
+          cd "$t/project"
+          check() {   # check <_commit> <text the step's output must contain> [<_src_path>]
+            printf '_commit: %s\n_src_path: %s\n' "$1" "${3:-file://$t/template.git}" > .copier-answers.yml
+            out="$(bash -e "$t/step.sh" 2>&1)" || { echo "::error::the drift step failed for _commit $1: $out"; exit 1; }
+            case "$out" in *"$2"*) echo "_commit $1: $out" ;; *) echo "::error::drift step, _commit $1: want \"$2\", got: $out"; exit 1 ;; esac
+          }
+          check "v0.2.0-1-g$head" "is current"
+          check "$head" "is current"   # a bare sha
+          check "v0.1.0-1-g$old" "template update available: project is on v0.1.0-1-g$old, the template's main is at $head"
+          check v0.2.0 "template update available"   # an annotated tag on an older commit
+          check v9.9.9 "template update available"   # a tag the template does not have
+          check v0.2.0-1-g1a2b3c4 "cannot read the main branch of template" "file://$t/missing.git"
+          tg tag -a v0.3.0 -m v0.3.0 && publish
+          check v0.3.0 "is current"   # an annotated tag on main's head: its commit, not the tag object
+          tg commit -q --allow-empty -m d && tg tag v0.3.1 && publish
+          check v0.3.1 "is current"   # a lightweight tag
+          check v0.3.0 "template update available"

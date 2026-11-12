@@ -1,0 +1,85 @@
+// Charts: recharts for dashboards (SVG, declarative) and TradingView's lightweight-charts for dense time series
+// (canvas). lightweight-charts' licence asks for attribution; attributionLogo keeps the TradingView link visible.
+import { createChart, LineSeries, type UTCTimestamp } from "lightweight-charts";
+import { type ReactElement, useEffect, useRef } from "react";
+import {
+	Bar,
+	BarChart,
+	CartesianGrid,
+	ResponsiveContainer,
+	Tooltip,
+	XAxis,
+	YAxis,
+} from "recharts";
+
+/** One bar of {@link SignupsChart}. */
+export interface Datum {
+	/** Category label on the x axis. */
+	readonly label: string;
+	/** Bar height. */
+	readonly value: number;
+}
+
+/** A bar chart (recharts) with an accessible name; the data table next to it carries the numbers. */
+export function SignupsChart(props: {
+	readonly data: readonly Datum[];
+	readonly title: string;
+}): ReactElement {
+	return (
+		<figure className="h-64">
+			<figcaption className="mb-2 font-semibold">{props.title}</figcaption>
+			<ResponsiveContainer width="100%" height="100%">
+				<BarChart data={[...props.data]} accessibilityLayer>
+					<CartesianGrid strokeDasharray="3 3" />
+					<XAxis dataKey="label" />
+					<YAxis />
+					<Tooltip />
+					<Bar dataKey="value" fill="currentColor" />
+				</BarChart>
+			</ResponsiveContainer>
+		</figure>
+	);
+}
+
+/** One point of {@link PriceChart}: seconds since the epoch and a value. */
+export interface Point {
+	/** UTC timestamp in seconds. */
+	readonly time: number;
+	/** Value at that time. */
+	readonly value: number;
+}
+
+/** A line chart drawn by lightweight-charts on a canvas (mounted on the client). */
+export function PriceChart(props: {
+	readonly points: readonly Point[];
+	readonly title: string;
+}): ReactElement {
+	const container = useRef<HTMLDivElement>(null);
+	useEffect(() => {
+		const element = container.current;
+		if (element === null) {
+			return undefined;
+		}
+		const chart = createChart(element, {
+			autoSize: true,
+			layout: { attributionLogo: true },
+		});
+		chart.addSeries(LineSeries).setData(
+			props.points.map((point) => ({
+				time: point.time as UTCTimestamp,
+				value: point.value,
+			})),
+		);
+		return () => {
+			chart.remove();
+		};
+	}, [props.points]);
+	// A captioned figure, not role="img": the chart contains TradingView's attribution link, and an image may not
+	// contain focusable content (axe nested-interactive).
+	return (
+		<figure>
+			<figcaption className="mb-2 font-semibold">{props.title}</figcaption>
+			<div ref={container} className="h-64 w-full" />
+		</figure>
+	);
+}

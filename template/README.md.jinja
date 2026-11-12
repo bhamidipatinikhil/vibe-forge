@@ -1,0 +1,145 @@
+# {{ project_name }}
+
+Generated from the vibe-forge Copier template; the template source and
+version are recorded in `.copier-answers.yml`. How to work here: [docs/PLAYBOOK.md](docs/PLAYBOOK.md).
+What the agent is told: [AGENTS.md](AGENTS.md) (kept under 60 lines, reviewed like code). The stack and what it
+deliberately leaves out: [docs/decisions/0002-stack.md](docs/decisions/0002-stack.md). Accounts to create:
+[docs/services.md](docs/services.md).
+
+{% if kind == 'web' -%}
+A TanStack Start (React 19, server-rendered) web app served by a Hono API in one Node process, on Postgres.
+{%- else -%}
+A Hono + Zod OpenAPI service on Postgres.
+{%- endif %} Accounts and sessions (better-auth), background jobs and cron (pg-boss), transactional email
+(Resend, Mailpit locally), feature flags (OpenFeature + flagd, flags in `flags/flags.json`), errors to Sentry and
+traces to any OTLP collector.
+
+## Quick start
+
+```sh
+direnv allow                      # nix-direnv loads the toolchain: Node {{ node_major }}, pnpm, just, Postgres 18, scanners, Claude Code
+nix develop                       # only if you do not use direnv
+pnpm install --frozen-lockfile    # pnpm-lock.yaml was committed on day one by new-project.sh; every later install is frozen
+just check                        # the one gate; must be green before the first prompt (tests start their own Postgres)
+just db-up                        # a local Postgres on 127.0.0.1:54329 with the migrations applied (data in .data/pg)
+pnpm dev                          # http://127.0.0.1:3000{% if kind == 'web' %} (Vite HMR for the UI, restart on server changes){% else %} in watch mode{% endif %}
+```
+
+Then open `claude`, run `/sandbox` once and confirm the Dependencies tab is green.
+
+## Commands
+
+Everything runs inside the Nix shell (direnv loads it). `just` alone runs `check`.
+
+| Command | What it does |
+| --- | --- |
+| `just check` | The fast, complete local gate: {% if kind == 'web' %}generated sources, {% endif %}typecheck (app and server build graph), lint (Biome, ESLint with jsx-a11y and react-hooks, ast-grep and its rule tests, shellcheck, Squawk), Vitest with coverage{% if kind == 'web' %} (Node and browser projects){% endif %} and a real Postgres, knip, dependency-cruiser, jscpd, TypeDoc, `openapi.json`/`.env.example`/`db/schema.sql`/database-type drift, the oasdiff breaking-change check, docs-drift. lefthook pre-push, the agent's Stop hook and CI run exactly this. |
+| `just ci` | `check` plus the slow oracles: `mutation`, `sast`, `secrets`, `licenses`{% if kind == 'web' %}, `size`, `lighthouse`{% endif %}. Run it locally before a release. |
+| `just mutation` | StrykerJS incremental mutation testing: `break: 60` for `src/` (`stryker.config.json`), then `break: 80` for `src/domain` (`stryker.domain.config.json`). |
+| `just sast` | Semgrep CE with the OWASP Top Ten, TypeScript, Node, React and secrets rulesets. |
+| `just secrets` | gitleaks and TruffleHog (`--results=verified,unknown`; verified secrets fail) over the git history (pre-commit scans only staged changes). |
+| `just licenses` | Fails on any production dependency outside the SPDX allowlist in the `justfile` (one reviewed exception, see ADR 0002). |
+{%- if with_playwright %}
+| `just e2e` | Builds, then Playwright against the build on a throwaway Postgres: `tests/e2e` (axe{% if kind == 'web' %}, CSP, the account flow{% endif %}), `tests/security` (ASVS chapters), `tests/smoke` (deploy check). |
+{%- endif %}
+{%- if kind == 'web' %}
+| `just size` / `just lighthouse` | Bundle budgets (`.size-limit.json`) and Lighthouse CI (`lighthouserc.json`: accessibility, SEO and best practices ≥ 0.95) on the build. |
+{%- endif %}
+| `just db-up` / `db-down` / `db-migrate` / `db-new <name>` | The local database; `db-migrate` applies new migrations and regenerates `db/schema.sql` and `src/infra/db/schema.gen.ts`. |
+| `just mail` | Mailpit on http://127.0.0.1:8025; run the app with `MAILPIT_URL=http://127.0.0.1:8025` to see every email it sends. |
+| `just load` | k6 smoke test (`tests/load/smoke.js`) against a local build, or `BASE_URL`. |
+| `just doctor` | Version agreement: pnpm vs `packageManager`, Node vs `$NODE_MAJOR`{% if with_playwright %}, Playwright vs the Nix driver{% endif %}, Postgres 18, `claude --version`. |
+
+Package scripts: `pnpm dev`, `pnpm build` then `pnpm start` (production, `dist/`), `pnpm test`, `pnpm openapi`
+(regenerate `openapi.json`), `pnpm env:example` (regenerate `.env.example` from `src/env.ts`).
+
+`.github/workflows/deploy.yml` builds and attests the image from the root `Dockerfile` and migrates the database
+(`DATABASE_URL` secret) before deploying. Its `image` and `deploy` jobs run only once the `PRODUCTION_URL`
+repository variable is set, and the deploy command for your platform (marked `TODO(project)`) is yours to supply;
+until then only its `gates` job runs on every push to `main`.
+
+## Running with secrets
+
+Plaintext secrets never live on disk. `.env.example` is the documented key list (generated from `src/env.ts`,
+which validates it at start-up); the values come from an encrypted file or a vault and are decrypted only into the
+child process:
+
+```sh
+sops exec-env secrets/dev.enc.env 'pnpm dev'     # sops + age (.sops.yaml): values exist only inside that process
+op run --env-file=.env.op -- pnpm dev            # 1Password CLI: op:// references
+```
+
+Locally nothing is required: every key has a development default (the database is `just db-up`'s). The agent is
+denied `Read(.env*)` and `Read(secrets/**)` in `.claude/settings.json`, and lefthook refuses to commit `.env*`,
+`*.pem` and `*.key` files.
+
+## Layout
+
+| Path | Purpose |
+| --- | --- |
+| `src/domain/` | Pure business logic: no I/O, no imports from app, infra or ui (dependency-cruiser enforces it). |
+| `src/schemas/` | Zod schemas: the single source of truth for request and response shapes and for `openapi.json`. |
+| `src/app/` | HTTP: Hono + Zod OpenAPI routes, the security middleware, and `ports.ts` (what the app needs from infra). |
+| `src/infra/` | Adapters: Postgres (Kysely), better-auth, pg-boss jobs, email, flags, Sentry, the server and its composition root. |
+{%- if kind == 'web' %}
+| `src/ui/` | The TanStack Start app: `routes/` (file routes), `components/` (`ui/` holds the copied shadcn components), `lib/`, `styles/`. It talks to the server through the documented HTTP API only. |
+| `messages/`, `content/` | Translations (Paraglide; `project.inlang/`) and MDX posts (content-collections). |
+{%- else %}
+| `src/ui/` | Reserved for server-rendered views (empty in a service). |
+{%- endif %}
+| `src/env.ts`, `src/logger.ts`, `src/instrumentation.ts` | Typed environment (t3-env), Pino with redaction, OpenTelemetry + Sentry bootstrap. |
+| `migrations/`, `db/schema.sql` | Expand-only dbmate migrations (Squawk lints them) and the schema they produce. |
+| `flags/flags.json` | Feature flags and kill switches (flagd format), read in-process. |
+| `tests/` | `setup.*.ts` (MSW, Postgres), `unit/`{% if with_playwright %}, `e2e/`, `security/`, `smoke/` (Playwright){% endif %}, `load/` (k6). Unit tests also sit next to the code. |
+| `scripts/` | Generators with `--check` (OpenAPI, `.env.example`, database), the throwaway Postgres helper{% if kind == 'web' %}, the dev server{% endif %}. |
+| `docs/` | `PLAYBOOK.md`, `services.md`, `decisions/` (ADRs in MADR 4 format), `runbooks/`, `glossary.md`, `learnings.md`, `metrics.md`{% if kind == 'web' %}, `registry.md`{% endif %}. |
+| `plans/` | Specs written before implementation; they survive `/clear` and compaction. |
+| `pipelines/` | Pluggable interaction pipelines (intent-driven, reference-study, telemetry-driven); every one ends in `plans/<slug>/{spec,plan,tasks}.md`. |
+| `security-evidence/` | Dated security-review artefacts (SARIF, revision stamps) committed as evidence. |
+| `openapi.json` | The generated API contract (`pnpm openapi`); `just check` fails on drift and on breaking changes against `origin/main` (oasdiff), unless a commit says `#api-break <reason>`. |
+
+Architecture decisions live in `docs/decisions/`; a change to a layer boundary
+needs a new ADR in the same change (`scripts/docs-drift.sh` enforces it).
+
+## The knowledge layer
+
+Three durable files carry what should outlive any session, and one ephemeral one carries what should not:
+
+- `docs/glossary.md` — the canonical terms; check it (grep) before inventing a new one.
+- `docs/registry.md`{% if kind != 'web' %} (web projects){% endif %} — the scoped component ledger (`GLOBAL`,
+  `ARCHETYPE:<name>`, `FEATURE:<name>`, `ATOM`); register what you build, reference by ID.
+- `docs/learnings.md` — dated post-mortems; when the same lesson recurs, promote it into `AGENTS.md` or a rule.
+- `.scratch/pipelines/<slug>/` — raw harvest material, git-ignored; `just prune-scratch <slug>` deletes it after
+  `just distill` (which shows the glossary/registry diff for your approval).
+
+`scripts/offload-context.mjs` keeps verbose command output out of the context window; `scripts/sync-tasks.mjs`
+prints the dependency-ordered task queue from `plans/**/*.md` (with `--bd`, mirrors it to the Beads CLI when
+installed). `docs/metrics.md` + `just metrics` track the process: commits, first-pass CI rate, review-rework ratio,
+$ per merged change.
+
+## Updating from the template
+
+This project follows the template's `main` branch and records the template commit it
+was generated from (`_commit` in `.copier-answers.yml`). To pull template changes:
+
+```sh
+nix run --inputs-from . nixpkgs#copier -- update --trust --defaults --conflict rej --vcs-ref main
+```
+
+Always keep `--vcs-ref main`: without it Copier looks for the template's newest
+release tag instead, which is older than `main` ("Downgrades are not supported").
+Copier three-way-merges the template diff into the project and leaves `*.rej`
+files where it cannot. `.github/workflows/template-update.yml` runs this every
+Monday and opens a PR (it needs the `GH_TOKEN_FOR_UPDATES` secret, a PAT, so CI
+runs on the PR it opens); review any `.rej` conflicts there. The PAT needs the
+`repo` and `workflow` scopes (fine-grained: Contents, Pull requests, Issues and
+Workflows read and write on this repository, Contents read on the template): the
+workflow clones the template with it (private template repositories included),
+pushes the branch, which often changes `.github/workflows/*` (GitHub refuses that
+from a token without the workflow scope), and creates the `template-update` label
+and the PR. When the weekly job fails, the `::error::` line in its log says what to
+change, and prints any repair command (a `copier recopy` runs in a clean checkout: it
+overwrites uncommitted changes, and your edits to template-owned files, without asking).
+Files the template marks `_skip_if_exists` (this README, ADRs, `src/`, `tests/`,
+`migrations/`, the generated `openapi.json` and `.env.example`, translations and content) are never overwritten by
+an update. A release that changes code you own says so in its changelog and ships the steps in `docs/upgrading/`.

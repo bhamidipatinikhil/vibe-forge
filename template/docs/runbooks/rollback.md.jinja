@@ -1,0 +1,57 @@
+# Runbook: rollback
+
+Recover in this order: **flag first, app second, data last**. Each step is
+faster and safer than the next, and most incidents end at step 2. Keep this page
+short enough to follow at 03:00, and write the incident note as you go.
+
+## 0. Who and when
+
+- Who: the on-call maintainer (solo project: you). Anyone may do step 1 at once; steps 3 and 4 get a second pair of eyes when one exists.
+- When: the post-deploy check in `deploy.yml` fails (the `/readyz` poll{% if with_playwright %}, then `tests/smoke` against the new deployment{% endif %}), an alert fires on error rate or p95 latency, or anyone reports wrong data.
+- Identify first: take the `trace_id` from the alert into Grafana/Sentry and confirm the blast radius (which routes, since which deployment, how many users).
+
+## 1. Flag first (seconds, no deploy)
+
+- Flip the flag in `flags/flags.json` (flagd format, read in-process by OpenFeature: `src/infra/flags.ts`): set the feature's flag `defaultVariant` to `"off"`, or turn on `kill-switch-writes`, which answers every state-changing `/api/v1/*` request with a 503 while reads and sign-in keep working. This is why every risky feature ships behind a flag.
+  - If the flag file is mounted into the container (a volume or config map at `FLAGS_FILE`), the provider watches it: the change is live in seconds, no restart.
+  - If it is baked into the image, commit the change and redeploy: a flags-only release, still faster and safer than step 2.
+- If the symptom stops, you are done: open an issue, leave the flag off, fix forward.
+
+## 2. App second (minutes): roll back to the last green deployment
+
+- Deploys are immutable, so this is a pointer move. Pick the last deployment whose smoke test was green (`gh run list --workflow deploy.yml`):
+  - Vercel: `vercel rollback` (Hobby: only the immediately previous deployment).
+  - Cloudflare Workers: `wrangler rollback` (any of the last 100 versions).
+  - Container platforms: redeploy the previous image **by digest** (`ghcr.io/<owner>/<image>@sha256:...`), never by a mutable tag.
+- None of these revert environment variables or bound resources: diff the configuration of the two deployments (step 3).
+{%- if with_playwright %}
+- Re-run the smoke test against production: `BASE_URL=https://<prod-host> pnpm exec playwright test tests/smoke`.
+{%- else %}
+- Re-check production by hand: `curl -fsS https://<prod-host>/readyz` (the same poll `deploy.yml` runs after a deploy).
+{%- endif %}
+
+## 3. Config rollback
+
+- Configuration is versioned with the code: `src/env.ts` is the schema, `.env.example` the key list, `secrets/*.enc.env` the sops-encrypted values. Revert the commit that changed it and redeploy, or re-apply the previous values in the provider's dashboard, then redeploy so the running process picks them up.
+- A rotated secret cannot be rolled back: if a new secret caused the incident, issue another new one rather than reviving the old.
+
+## 4. Data last: migrations are expand/contract
+
+- Migrations in `migrations/` are expand-only (additive, backward compatible; Squawk lints them in CI), so **old code keeps running on the new schema**: rolling the app back never requires a schema rollback. Contract steps ship in a later release, after the code that needed the old shape is gone.
+- Never run a destructive `down` migration against production during an incident.
+- If data is corrupt: restore to a point in time **into a branch or a new database first** (Neon instant restore: up to 6 h of history on Free; Supabase PITR; otherwise last night's `pg_dump`), verify there, then promote or swap. Idempotent jobs (pg-boss) and `Idempotency-Key` on side-effecting POSTs make replaying the gap safe.
+
+## 5. Record
+
+- Incident note with the timeline (detect, flag, rollback, restore), root cause, and the test that would have caught it. Add that test.
+- If an agent-driven change caused it, add one line to AGENTS.md or a hook, not a paragraph.
+
+## Restore drill (quarterly)
+
+Restore the latest backup or PITR point into a scratch database, point a local
+build at it, run `just check`{% if with_playwright %} and the smoke suite{% endif %}, and time the whole procedure. A backup you have
+never restored is not a backup. Record each drill here:
+
+| Date | Who | Source (PITR / pg_dump) | Time to restore | Issues found |
+| ---- | --- | ----------------------- | --------------- | ------------ |
+|      |     |                         |                 |              |

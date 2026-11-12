@@ -1,0 +1,191 @@
+import { OpenAPIHono } from "@hono/zod-openapi";
+import { trace } from "@opentelemetry/api";
+import { HTTPException } from "hono/http-exception";
+import { logger } from "../logger.js";
+import type { ErrorResponse } from "../schemas/error.js";
+import { openApiConfig } from "./openapi.js";
+import type {
+	App,
+	AppEnv,
+	AuthPort,
+	ErrorReporter,
+	FlagsPort,
+{%- if kind == 'web' %}
+	WebHandler,
+{%- endif %}
+} from "./ports.js";
+{%- if with_ai %}
+import { registerAiRoutes, type Summarizer } from "./routes/ai.js";
+{%- endif %}
+import { registerAuthRoutes, unavailableAuth } from "./routes/auth.js";
+import { registerEventRoutes } from "./routes/events.js";
+import { type ReadinessCheck, registerHealthRoutes } from "./routes/health.js";
+{%- if kind == 'web' %}
+import { type OgRenderer, registerOgRoute } from "./routes/og.js";
+{%- endif %}
+{%- if payments != 'none' %}
+import {
+	registerPaymentWebhook,
+	type WebhookVerifier,
+} from "./routes/payments.js";
+{%- endif %}
+{%- if kind == 'service' %}
+import { registerRootRoute } from "./routes/root.js";
+{%- endif %}
+import { registerSlugRoutes } from "./routes/slug.js";
+{%- if kind == 'web' %}
+import { registerVitalsRoute } from "./routes/vitals.js";
+{%- endif %}
+import { apiGuards, securityHeaders } from "./security.js";
+import { tracing } from "./tracing.js";
+
+/** Options of {@link createApp}: the collaborators, each with a safe default for tests. */
+export interface AppOptions {
+	/** Dependencies probed by `GET /readyz`; none by default. */
+	readonly readinessChecks?: readonly ReadinessCheck[];
+	/** better-auth; without it `/api/auth/*` answers 503 and nobody is signed in. */
+	readonly auth?: AuthPort;
+	/** Feature flags; without it every flag takes its coded fallback. */
+	readonly flags?: FlagsPort;
+	/** Error reporting besides the log (Sentry). */
+	readonly errors?: ErrorReporter;
+	/** Public origin: the CSRF check accepts form posts from here only. */
+	readonly appUrl?: string;
+	/** Largest accepted `/api/*` body in bytes (default 1 MiB). */
+	readonly bodyLimitBytes?: number;
+	/** Extra CSP `connect-src` origins. */
+	readonly connectSrc?: readonly string[];
+	/** Send the CSP report-only (the Vite dev server only). */
+	readonly cspReportOnly?: boolean;
+{%- if kind == 'web' %}
+	/** The TanStack Start app and its assets; without it non-API paths answer 404. */
+	readonly web?: WebHandler;
+	/** Open Graph image renderer for `GET /api/v1/og`. */
+	readonly og?: OgRenderer;
+{%- endif %}
+{%- if payments != 'none' %}
+	/** Verifies payment-provider webhooks; without it the webhook route answers 503. */
+	readonly payments?: WebhookVerifier;
+{%- endif %}
+{%- if with_ai %}
+	/** Claude-backed summarizer; without it `POST /api/v1/ai/summarize` answers 503. */
+	readonly ai?: Summarizer;
+{%- endif %}
+}
+
+const fallbackFlags: FlagsPort = {
+	isEnabled: (_key, fallback) => Promise.resolve(fallback),
+};
+
+const noReporter: ErrorReporter = { capture: () => undefined };
+
+function errorBody(
+	code: string,
+	message: string,
+	traceId?: string,
+): ErrorResponse {
+	return { error: { code, message, traceId } };
+}
+
+/**
+ * Builds the HTTP application: a span per request, request logging, the
+ * security headers and `/api/*` guards, the probes, the API routes,
+ * `/openapi.json`{% if kind == 'web' %}, the web app{% endif %}, and JSON 404/500 handlers.
+ * @param options - Collaborators; every one is optional (see {@link AppOptions}).
+ * @returns A configured application; call `app.fetch` or `app.request`.
+ */
+export function createApp(options: AppOptions = {}): App {
+	const flags = options.flags ?? fallbackFlags;
+	const errors = options.errors ?? noReporter;
+	const app = new OpenAPIHono<AppEnv>({
+		defaultHook: (result, c) => {
+			if (result.success) {
+				return undefined;
+			}
+			const message = result.error.issues
+				.map((issue) => `${issue.path.map(String).join(".")}: ${issue.message}`)
+				.join("; ");
+			return c.json(errorBody("validation", message), 400);
+		},
+	});
+
+	app.use(tracing());
+
+	app.use(async (c, next) => {
+		const startedAt = performance.now();
+		await next();
+		logger.info(
+			{
+				method: c.req.method,
+				path: c.req.path,
+				status: c.res.status,
+				durationMs: Math.round(performance.now() - startedAt),
+			},
+			"request completed",
+		);
+	});
+
+	app.use(
+		securityHeaders({
+			connectSrc: options.connectSrc ?? [],
+			reportOnly: options.cspReportOnly ?? false,
+		}),
+	);
+	app.use(
+		"/api/*",
+		...apiGuards({
+			maxBodyBytes: options.bodyLimitBytes ?? 1_048_576,
+			appUrl: options.appUrl ?? "http://127.0.0.1:3000",
+			flags,
+		}),
+	);
+
+{%- if kind == 'service' %}
+	registerRootRoute(app);
+{%- endif %}
+	registerHealthRoutes(app, options.readinessChecks ?? []);
+	registerAuthRoutes(app, options.auth ?? unavailableAuth);
+	registerSlugRoutes(app);
+	registerEventRoutes(app, flags);
+{%- if kind == 'web' %}
+	registerOgRoute(app, options.og);
+	registerVitalsRoute(app);
+{%- endif %}
+{%- if payments != 'none' %}
+	registerPaymentWebhook(app, options.payments);
+{%- endif %}
+{%- if with_ai %}
+	registerAiRoutes(app, options.auth ?? unavailableAuth, options.ai);
+{%- endif %}
+	app.doc31("/openapi.json", openApiConfig);
+
+	const notFound = (method: string, path: string) =>
+		errorBody("not_found", `No route for ${method} ${path}`);
+{%- if kind == 'web' %}
+	// The web app answers every other path, so API misses and TanStack Start's server-function endpoint (banned by
+	// rules/no-start-server-endpoints.yml: every endpoint is a documented Hono route) are answered here first.
+	app.all("/api/*", (c) => c.json(notFound(c.req.method, c.req.path), 404));
+	app.all("/_serverFn/*", (c) =>
+		c.json(notFound(c.req.method, c.req.path), 404),
+	);
+	if (options.web !== undefined) {
+		app.all("*", options.web);
+	}
+{%- endif %}
+	app.notFound((c) => c.json(notFound(c.req.method, c.req.path), 404));
+
+	app.onError((error, c) => {
+		if (error instanceof HTTPException) {
+			return error.getResponse();
+		}
+		const traceId = trace.getActiveSpan()?.spanContext().traceId;
+		logger.error({ err: error, traceId }, "unhandled error");
+		errors.capture(error, {
+			path: c.req.path,
+			...(traceId === undefined ? {} : { traceId }),
+		});
+		return c.json(errorBody("internal", "Internal Server Error", traceId), 500);
+	});
+
+	return app;
+}

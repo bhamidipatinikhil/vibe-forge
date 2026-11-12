@@ -1,0 +1,23 @@
+id: no-process-env-outside-env
+language: TypeScript
+severity: error
+message: 'Read configuration from the validated `env` object exported by src/env.ts, not from process.env.'
+note: 'src/env.ts is the only module that parses process.env (t3-env + Zod). Add the key there with a schema and a default, then import `env`.'
+files:
+  - src/**
+ignores:
+  - src/env.ts
+rule:
+  pattern: process.env
+---
+id: no-process-env-outside-env-tsx
+language: Tsx
+severity: error
+message: 'Read configuration from the validated `env` object exported by src/env.ts, not from process.env.'
+note: 'src/env.ts is the only module that parses process.env (t3-env + Zod). Add the key there with a schema and a default, then import `env`.'
+files:
+  - src/**
+ignores:
+  - src/env.ts
+rule:
+  pattern: process.env

@@ -1,0 +1,44 @@
+# .github/workflows/template-update.yml
+# Weekly: pull the template's main branch into this project and open a PR (CONFLICTS in the title when *.rej files
+# exist). Projects follow the template's main branch, as new-project.sh made them, so every update names it
+# (`--vcs-ref main`; a plain `copier update` would look for release tags instead). When the update fails, an ::error::
+# line under Copier's output says what to change. The GH_TOKEN_FOR_UPDATES secret is a PAT with the repo and workflow
+# scopes: an update that changes .github/workflows/* is pushed with it (docs/PLAYBOOK.md).
+name: template-update
+on: { schedule: [{ cron: "0 7 * * 1" }], workflow_dispatch: {} }
+permissions: {}
+jobs:
+  copier-update:
+    runs-on: ubuntu-latest
+    permissions: { contents: write, pull-requests: write }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0, persist-credentials: false, token: "${{ secrets.GH_TOKEN_FOR_UPDATES }}" }   # a PAT, so CI runs on the PR it opens
+      - uses: DeterminateSystems/determinate-nix-action@92957199488000b908fdad19f63711000965d8f3 # v3.24.1
+      - run: |
+          git config user.name template-bot && git config user.email template-bot@users.noreply.github.com
+          gh auth setup-git --hostname github.com --force   # checkout does not persist credentials: gh's credential helper (GH_TOKEN) clones a private template and pushes
+          commit="$(sed -n 's/^_commit: *//p' .copier-answers.yml | tr -d "\"'")"; sha="${commit##*-g}"   # <tag>-<n>-g<sha> after a tag, else a tag or a bare sha
+          log="$RUNNER_TEMP/copier-update.log"   # Copier's output, outside the work tree, read below to explain a failure
+          set +e   # keep Copier's exit status: its output streams to the job log and the file as it runs
+          nix run --inputs-from . nixpkgs#copier -- update --trust --defaults --conflict rej --vcs-ref main 2>&1 | tee "$log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" != 0 ]; then
+            recopy="in a clean checkout (recopy overwrites uncommitted changes) run nix run --inputs-from . nixpkgs#copier -- recopy --trust --defaults --overwrite --vcs-ref main, then review the diff and put back your own edits to template-owned files before you commit"
+            if grep -qF "pathspec 'main' did not match" "$log"; then
+              echo "::error::The template repository has no main branch, and projects follow the template's main branch: push it (or rename the template's default branch back to main), then run this job again."
+            elif [ -n "$commit" ] && grep -qF "pathspec '$commit' did not match" "$log"; then
+              echo "::error::The template commit this project records ($commit) is no longer in the template repository: the template's main was rewritten (amend, rebase, force-push), or the project was made from a branch that is gone. Push the commit back from a template clone that still has it (git push origin $sha:refs/heads/keep-$sha), run this job again, and delete keep-$sha once every project has updated past it. Or $recopy."
+            elif grep -q 'Downgrades are not supported' "$log"; then
+              echo "::error::The template's main counts as older than this project's template commit $commit: main was reset or force-pushed, or the project was made from a newer tag or another branch. Push main forward past $commit, or $recopy."
+            fi
+            exit 1
+          fi
+          if find . -name '*.rej' | grep -q .; then CONFLICTS=1; fi
+          branch="chore/template-update-$(date +%F)"
+          git checkout -b "$branch" && git add -A && git commit -qm "chore: copier update" || exit 0   # nothing changed: no PR
+          git push -u origin HEAD || { echo "::error::Pushing the update branch failed. If git says it refuses to create or update a workflow, the GH_TOKEN_FOR_UPDATES token lacks the workflow scope (fine-grained: Workflows read and write), which an update that changes .github/workflows/* needs: docs/PLAYBOOK.md, Day 0. If git says non-fast-forward, the branch $branch from an earlier run today still exists: merge or close its pull request, delete the branch, then run this job again."; exit 1; }
+          gh label create template-update --force --description "copier update PRs" >/dev/null 2>&1 || true   # `gh pr create --label` fails when the label is missing
+          gh pr create --fill --label template-update ${CONFLICTS:+--title "chore: copier update (CONFLICTS: review *.rej)"}
+        env: { GH_TOKEN: "${{ secrets.GH_TOKEN_FOR_UPDATES }}" }

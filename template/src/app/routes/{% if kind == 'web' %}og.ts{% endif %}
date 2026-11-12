@@ -1,0 +1,73 @@
+import { createRoute, z } from "@hono/zod-openapi";
+import { ErrorResponseSchema } from "../../schemas/error.js";
+import type { App } from "../ports.js";
+
+/** Renders an Open Graph image (src/infra/og.ts: satori, then resvg). */
+export interface OgRenderer {
+	/**
+	 * Renders the 1200x630 PNG for a page.
+	 * @param title - The page title drawn on the image.
+	 */
+	readonly render: (title: string) => Promise<Uint8Array<ArrayBuffer>>;
+}
+
+const ogRoute = createRoute({
+	method: "get",
+	path: "/api/v1/og",
+	tags: ["web"],
+	summary: "Open Graph image (1200x630 PNG) for a page title",
+	request: {
+		query: z.object({
+			title: z
+				.string()
+				.min(1)
+				.max(120)
+				.openapi({
+					param: { name: "title", in: "query" },
+					example: "Hello, World!",
+				}),
+		}),
+	},
+	responses: {
+		200: {
+			description: "The PNG image",
+			content: {
+				"image/png": { schema: z.string().openapi({ format: "binary" }) },
+			},
+		},
+		400: {
+			description: "Missing or too long title",
+			content: { "application/json": { schema: ErrorResponseSchema } },
+		},
+		503: {
+			description: "No renderer configured",
+			content: { "application/json": { schema: ErrorResponseSchema } },
+		},
+	},
+});
+
+/**
+ * Registers `GET /api/v1/og?title=...`, cached for a day by browsers and CDNs.
+ * @param app - The application.
+ * @param og - The renderer; without it the route answers 503.
+ */
+export function registerOgRoute(app: App, og: OgRenderer | undefined): void {
+	app.openapi(ogRoute, async (c) => {
+		if (og === undefined) {
+			return c.json(
+				{
+					error: {
+						code: "unavailable",
+						message: "OG rendering is not configured",
+					},
+				},
+				503,
+			);
+		}
+		const png = await og.render(c.req.valid("query").title);
+		return c.body(png, 200, {
+			"content-type": "image/png",
+			"cache-control": "public, max-age=86400",
+		});
+	});
+}

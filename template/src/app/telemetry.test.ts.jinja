@@ -1,0 +1,301 @@
+import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
+import { NodeSDK, type NodeSDKConfiguration } from "@opentelemetry/sdk-node";
+import { HTTPException } from "hono/http-exception";
+{%- if payments != 'none' %}
+import { err } from "neverthrow";
+{%- endif %}
+import {
+	afterAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	type MockInstance,
+	onTestFinished,
+	vi,
+} from "vitest";
+import { z } from "zod";
+import { env } from "../env.js";
+import { createAuth } from "../infra/auth.js";
+import { createDatabase } from "../infra/db.js";
+import { logger } from "../logger.js";
+import { ErrorResponseSchema } from "../schemas/error.js";
+import { createApp } from "./app.js";
+
+vi.hoisted(() => {
+	vi.stubEnv("LOG_LEVEL", "silent");
+});
+
+type SpanProcessor = NonNullable<
+	NodeSDKConfiguration["spanProcessors"]
+>[number];
+type ReadableSpan = Parameters<SpanProcessor["onEnd"]>[0];
+type LiveSpan = Parameters<SpanProcessor["onStart"]>[0];
+
+// Keeps finished spans in memory and watches `recordException` on every live
+// span. The SDK's InMemorySpanExporter lives in @opentelemetry/sdk-trace, a
+// transitive dependency only; this processor needs nothing beyond the SDK the
+// service already ships.
+const finished: ReadableSpan[] = [];
+const exceptionSpies: MockInstance<LiveSpan["recordException"]>[] = [];
+const collector: SpanProcessor = {
+	onStart: (span) => {
+		exceptionSpies.push(vi.spyOn(span, "recordException"));
+	},
+	onEnd: (span) => {
+		finished.push(span);
+	},
+	forceFlush: () => Promise.resolve(),
+	shutdown: () => Promise.resolve(),
+};
+
+// Boots the SDK the way src/instrumentation.ts does, minus exporters and
+// auto-instrumentation: the app's own route wrapper has to produce the spans.
+const sdk = new NodeSDK({
+	autoDetectResources: false,
+	instrumentations: [],
+	logRecordProcessors: [],
+	metricReaders: [],
+	spanProcessors: [collector],
+});
+sdk.start();
+
+beforeEach(() => {
+	finished.length = 0;
+	exceptionSpies.length = 0;
+});
+
+afterAll(async () => {
+	await sdk.shutdown();
+	vi.unstubAllEnvs();
+});
+
+const METHODS = [
+	"get",
+	"post",
+	"put",
+	"patch",
+	"delete",
+	"head",
+	"options",
+] as const;
+
+const ExampleSchema = z.union([z.string(), z.number(), z.boolean()]);
+
+const OperationSchema = z.object({
+	parameters: z
+		.array(
+			z.object({
+				name: z.string(),
+				in: z.string(),
+				example: ExampleSchema.optional(),
+				// `.openapi({ example })` on a Zod query schema lands inside the
+				// parameter's `schema`; a parameter-level `example` is valid too.
+				schema: z.object({ example: ExampleSchema.optional() }).optional(),
+			}),
+		)
+		.optional(),
+	requestBody: z.unknown().optional(),
+	responses: z.record(z.string(), z.unknown()),
+});
+
+const DocumentSchema = z.object({
+	paths: z.record(z.string(), z.record(z.string(), z.unknown())),
+});
+
+type Operation = z.infer<typeof OperationSchema>;
+
+interface DocumentedRequest {
+	readonly method: string;
+	readonly path: string;
+	/** Path plus the documented example of every query parameter. */
+	readonly url: string;
+	/**
+	 * Statuses the example request may answer: every documented one. The
+	 * example carries no body and no session, so a route that needs either
+	 * answers its documented 400 or 401; what this test pins down is the span,
+	 * which every answer must produce.
+	 */
+	readonly statuses: readonly string[];
+	/** The operation takes a body: the example sends an empty JSON object (a bodiless POST would read as a form post to the CSRF check). */
+	readonly json: boolean;
+}
+
+function exampleUrl(path: string, operation: Operation): string {
+	const query = new URLSearchParams();
+	for (const parameter of operation.parameters ?? []) {
+		const example = parameter.example ?? parameter.schema?.example;
+		if (parameter.in === "query" && example !== undefined) {
+			query.set(parameter.name, String(example));
+		}
+	}
+	const encoded = query.toString();
+	return encoded === "" ? path : `${path}?${encoded}`;
+}
+
+function documentedRequests(
+	document: z.infer<typeof DocumentSchema>,
+): DocumentedRequest[] {
+	const requests: DocumentedRequest[] = [];
+	for (const [path, item] of Object.entries(document.paths)) {
+		for (const method of METHODS) {
+			const raw = item[method];
+			if (raw !== undefined) {
+				const operation = OperationSchema.parse(raw);
+				const documented = Object.keys(operation.responses);
+				requests.push({
+					method: method.toUpperCase(),
+					path,
+					url: exampleUrl(path, operation),
+					statuses: documented,
+					json: operation.requestBody !== undefined,
+				});
+			}
+		}
+	}
+	return requests;
+}
+
+/** The example request: writes come from the app's own origin, as a browser sends them. */
+function requestInit(request: DocumentedRequest): RequestInit {
+	if (request.method === "GET") {
+		return { method: request.method };
+	}
+	const json = request.json ? { "content-type": "application/json" } : {};
+	return {
+		method: request.method,
+		headers: { origin: new URL(env.APP_URL).origin, ...json },
+		...(request.json ? { body: "{}" } : {}),
+	};
+}
+
+/** The one SERVER span the last request produced. */
+function onlySpan(): ReadableSpan {
+	const spans = finished.filter((span) => span.kind === SpanKind.SERVER);
+	const [span] = spans;
+	if (span === undefined || spans.length !== 1) {
+		throw new Error(
+			`expected exactly one server span, got ${String(spans.length)}`,
+		);
+	}
+	return span;
+}
+
+/** Every value `recordException` was called with since the last reset. */
+function recordedExceptions(): unknown[] {
+	return exceptionSpies.flatMap((spy) =>
+		spy.mock.calls.map(([exception]) => exception),
+	);
+}
+
+describe("telemetry coverage", () => {
+	it("records one server span per route in the OpenAPI document", async () => {
+		// Real collaborators, so no documented route answers 5xx: better-auth on this file's database.
+		const db = createDatabase({ url: env.DATABASE_URL, poolMax: 2 });
+		const auth = createAuth({
+			db,
+			secret: env.BETTER_AUTH_SECRET,
+			appUrl: env.APP_URL,
+			sendEmail: () => Promise.resolve(),
+			logger,
+		});
+		const app = createApp({
+			auth,
+{%- if kind == 'web' %}
+			og: {
+				render: () => Promise.resolve(new Uint8Array([0x89, 0x50, 0x4e, 0x47])),
+			},
+{%- endif %}
+{%- if payments != 'none' %}
+			payments: { verify: () => Promise.resolve(err("invalid-signature")) },
+{%- endif %}
+		});
+		onTestFinished(() => db.destroy());
+		const document = DocumentSchema.parse(
+			await (await app.request("/openapi.json")).json(),
+		);
+		const requests = documentedRequests(document);
+		expect(requests.length).toBeGreaterThan(0);
+		for (const request of requests) {
+			finished.length = 0;
+			exceptionSpies.length = 0;
+			const response = await app.request(request.url, requestInit(request));
+			expect(request.statuses, `${request.method} ${request.url}`).toContain(
+				String(response.status),
+			);
+			const span = onlySpan();
+			expect(span.name).toBe(`${request.method} ${request.path}`);
+			expect(span.attributes).toMatchObject({
+				"http.request.method": request.method,
+				"url.path": request.path,
+				"http.route": request.path,
+				"http.response.status_code": response.status,
+			});
+			// Neither a 2xx nor a 4xx is a server error: the status stays unset. A success records nothing; on a 4xx a
+			// library may note its own validation error on the span (better-auth does), which is fine.
+			expect(span.status.code).toBe(SpanStatusCode.UNSET);
+			const succeeded = response.status < 400;
+			expect(succeeded ? recordedExceptions() : []).toEqual([]);
+			expect(succeeded ? span.events : []).toEqual([]);
+		}
+	});
+
+	it("records a thrown error, marks the span as an error and gives the client its trace id", async () => {
+		const failing = createApp();
+		failing.get("/boom", () => {
+			throw new Error("boom");
+		});
+		const response = await failing.request("/boom");
+		expect(response.status).toBe(500);
+		const { error } = ErrorResponseSchema.parse(await response.json());
+		const span = onlySpan();
+		expect(span.name).toBe("GET /boom");
+		expect(span.status.code).toBe(SpanStatusCode.ERROR);
+		expect(span.attributes["http.response.status_code"]).toBe(500);
+		expect(error.traceId).toBe(span.spanContext().traceId);
+		expect(recordedExceptions()).toEqual([expect.any(Error)]);
+		expect(span.events).toHaveLength(1);
+		const [event] = span.events;
+		expect(event?.name).toBe("exception");
+		expect(event?.attributes).toMatchObject({
+			"exception.type": "Error",
+			"exception.message": "boom",
+		});
+	});
+
+	it("marks a 5xx response as an error without recording an exception", async () => {
+		const degraded = createApp();
+		degraded.get("/upstream", (c) => c.text("upstream unavailable", 503));
+		const response = await degraded.request("/upstream");
+		expect(response.status).toBe(503);
+		const span = onlySpan();
+		expect(span.name).toBe("GET /upstream");
+		expect(span.status.code).toBe(SpanStatusCode.ERROR);
+		expect(span.attributes["http.response.status_code"]).toBe(503);
+		expect(recordedExceptions()).toEqual([]);
+		expect(span.events).toEqual([]);
+	});
+
+	it("records a thrown 4xx HTTPException but leaves the status unset", async () => {
+		const guarded = createApp();
+		guarded.get("/private", () => {
+			throw new HTTPException(401, { message: "Unauthorized" });
+		});
+		const response = await guarded.request("/private");
+		expect(response.status).toBe(401);
+		const span = onlySpan();
+		expect(span.status.code).toBe(SpanStatusCode.UNSET);
+		expect(span.attributes["http.response.status_code"]).toBe(401);
+		expect(recordedExceptions()).toEqual([expect.any(HTTPException)]);
+	});
+
+	it("names a request that matched no route after the catch-all", async () => {
+		const app = createApp();
+		const response = await app.request("/nope");
+		expect(response.status).toBe(404);
+		const span = onlySpan();
+		expect(span.name).toBe("GET /*");
+		expect(span.status.code).toBe(SpanStatusCode.UNSET);
+		expect(recordedExceptions()).toEqual([]);
+	});
+});

@@ -1,0 +1,12 @@
+// scripts/gen.ts — writes the generated web sources that typecheck, lint and tests need (all git-ignored):
+// src/ui/routeTree.gen.ts (TanStack Start's router plugin; the standalone `tsr generate` lacks Start's Register
+// augmentation), src/ui/paraglide/ (messages) and .content-collections/ (typed posts). Booting Vite once in
+// middleware mode runs exactly the plugins `vite build` and the dev server run, so all three agree.
+import { createServer } from "vite";
+
+const vite = await createServer({
+	server: { middlewareMode: true, hmr: false, ws: false, watch: null },
+	appType: "custom",
+	logLevel: "warn",
+});
+await vite.close();

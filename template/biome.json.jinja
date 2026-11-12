@@ -1,0 +1,48 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.6.3/schema.json",
+	"vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+	"files": {
+		"includes": [
+			"**",
+			"!src/infra/db/schema.gen.ts",
+			"!tests/lint/__fixtures__",
+			"!tests/arch/__fixtures__"
+		]
+	},
+	"formatter": { "enabled": true, "indentStyle": "tab" },
+	"javascript": { "formatter": { "quoteStyle": "double" } },
+{%- if kind == 'web' %}
+	"css": { "parser": { "tailwindDirectives": true } },
+{%- endif %}
+	"yaml": { "formatter": { "enabled": false } },
+	"markdown": { "formatter": { "enabled": false } },
+	"linter": {
+		"enabled": true,
+		"domains": {
+			"project": "recommended",
+			"test": "recommended",
+			"types": "recommended"{% if kind == 'web' %},
+			"react": "recommended"{% endif %}
+		},
+		"rules": {
+			"preset": "recommended",
+			"complexity": {
+				"noExcessiveCognitiveComplexity": {
+					"level": "error",
+					"options": { "maxAllowedComplexity": 15 }
+				}
+			},
+			"style": {
+				"noExcessiveLinesPerFile": {
+					"level": "error",
+					"options": { "maxLines": 300 }
+				}
+			},
+			"nursery": {
+				"noFloatingPromises": "error",
+				"noMisusedPromises": "error",
+				"useExhaustiveSwitchCases": "error"
+			}
+		}
+	}
+}

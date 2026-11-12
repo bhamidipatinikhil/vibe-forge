@@ -1,0 +1,38 @@
+# Services (accounts, not packages)
+
+What this project expects to run against in production, the environment variables each one needs (`src/env.ts` is
+the schema; `.env.example` lists them), and where the free tier ends. Put every value in `secrets/*.enc.env` (sops)
+or your vault, never in a committed file.
+
+| Service | For | Variables | Notes |
+| --- | --- | --- | --- |
+| GitHub | Code, CI, GHCR images, Renovate | repository secrets `DATABASE_URL`, `GH_TOKEN_FOR_UPDATES`; repository variable `PRODUCTION_URL` (switches deploys on) | Rulesets, CodeQL and the merge queue: docs/PLAYBOOK.md Day 0. |
+| Neon | Postgres | `DATABASE_URL` (app: pooled URL; `deploy.yml` migrations: the direct URL), `DATABASE_POOL_MAX` | Free tier: instant restore within 6 hours of history. Run the quarterly restore drill (docs/runbooks/rollback.md). |
+| Resend | Transactional email | `RESEND_API_KEY`, `EMAIL_FROM` (a verified domain) | Locally, `just mail` + `MAILPIT_URL` catches every email instead. |
+{%- if payments == 'razorpay' %}
+| Razorpay | Payments | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | Point the webhook at `/api/v1/webhooks/razorpay`; use test-mode keys outside production. |
+{%- elif payments == 'polar' %}
+| Polar | Payments (merchant of record) | `POLAR_ACCESS_TOKEN`, `POLAR_SERVER`, `POLAR_WEBHOOK_SECRET` | Point the webhook at `/api/v1/webhooks/polar`; `POLAR_SERVER=sandbox` outside production. |
+{%- else %}
+| Razorpay | Payments (when needed) | — | Not wired: a project generated with `payments=razorpay` (or `polar`) shows the SDK, the signature-verified webhook route and its tests to copy. |
+{%- endif %}
+{%- if with_ai %}
+| Anthropic | Claude API | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | Server-side refusal fallbacks are enabled in `src/infra/ai.ts`. |
+{%- endif %}
+| Grafana Cloud | Traces and metrics (OTLP) | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_SERVICE_NAME` | Web vitals arrive as the `web_vitals` histogram. |
+| Sentry | Errors | `SENTRY_DSN`, `SENTRY_RELEASE`{% if kind == 'web' %}; browser: `VITE_SENTRY_DSN`{% endif %} | Errors only; traces stay in Grafana. {% if kind == 'web' %}Add the ingest origin to `CSP_CONNECT_SRC`.{% endif %} |
+| Better Stack | Uptime | — (configured in Better Stack) | Monitor `/healthz` (liveness) and `/readyz` (readiness, includes the database). |
+{%- if kind == 'web' %}
+| Umami (self-hosted) | Privacy-friendly analytics | `VITE_UMAMI_SCRIPT_URL`, `VITE_UMAMI_WEBSITE_ID`, its origin in `CSP_CONNECT_SRC` | The script tag carries the CSP nonce; no cookies, no consent banner needed for it. |
+{%- endif %}
+
+## The agent's own GitHub identity
+
+Give the coding agent a separate GitHub account (a machine user) so that every change it makes arrives as a pull
+request you review, never as your own push. Steps in docs/PLAYBOOK.md, Day 0.
+
+## Roadmap: a database branch per pull request
+
+Neon can branch the database per PR (copy-on-write, seconds). The plan: a workflow creates a branch named after the
+PR, runs `dbmate up` against it, deploys a preview with that `DATABASE_URL`, and deletes the branch when the PR
+closes. Not wired yet: it needs the deploy target chosen in `deploy.yml` first.

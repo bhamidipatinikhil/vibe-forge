@@ -1,0 +1,53 @@
+import { err, ok } from "neverthrow";
+import { describe, expect, it, vi } from "vitest";
+import { createApp } from "../app.js";
+import type { AuthPort } from "../ports.js";
+import type { Summarizer } from "./ai.js";
+
+vi.hoisted(() => {
+	vi.stubEnv("LOG_LEVEL", "silent");
+});
+
+const signedIn: AuthPort = {
+	handler: () => Promise.resolve(new Response(null, { status: 404 })),
+	getSession: () =>
+		Promise.resolve({ userId: "u1", email: "ada@example.com", name: "Ada" }),
+};
+
+const post = (app: ReturnType<typeof createApp>, body: unknown) =>
+	app.request("/api/v1/ai/summarize", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(body),
+	});
+
+describe("POST /api/v1/ai/summarize", () => {
+	it("needs a session before anything else", async () => {
+		expect((await post(createApp(), {})).status).toBe(401);
+	});
+
+	it("answers 503 without a summarizer and validates the body", async () => {
+		expect(
+			(await post(createApp({ auth: signedIn }), { text: "hello" })).status,
+		).toBe(503);
+		expect(
+			(await post(createApp({ auth: signedIn }), { text: "" })).status,
+		).toBe(400);
+	});
+
+	it("returns the summary, and maps refusals and provider trouble to 422 and 503", async () => {
+		const results = [
+			ok("Short."),
+			err({ kind: "refused" as const }),
+			err({ kind: "busy" as const }),
+		];
+		const ai: Summarizer = {
+			summarize: () => Promise.resolve(results.shift() ?? ok("")),
+		};
+		const app = createApp({ auth: signedIn, ai });
+		const first = await post(app, { text: "Long text" });
+		expect(await first.json()).toEqual({ summary: "Short." });
+		expect((await post(app, { text: "x" })).status).toBe(422);
+		expect((await post(app, { text: "x" })).status).toBe(503);
+	});
+});

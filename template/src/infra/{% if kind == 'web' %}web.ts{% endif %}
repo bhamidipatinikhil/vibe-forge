@@ -1,0 +1,104 @@
+import { relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import { serveStatic } from "@hono/node-server/serve-static";
+import type { WebHandler } from "../app/ports.js";
+import { logger } from "../logger.js";
+
+/** Header carrying the CSP nonce into TanStack Start (read by src/ui/router.tsx). */
+export const NONCE_HEADER = "x-csp-nonce";
+
+/** The fetch handler `vite build` writes to dist/server/server.js. */
+interface StartEntry {
+	readonly fetch: (request: Request) => Promise<Response>;
+}
+
+// Relative to dist/node/infra/web.js once compiled: dist/server and dist/client.
+const BUILD = {
+	serverEntry: new URL("../../server/server.js", import.meta.url),
+	clientDir: new URL("../../client/", import.meta.url),
+};
+
+/** Where the web build lives; the defaults are the `vite build` output next to dist/node. */
+export interface WebBuild {
+	/** The server bundle (`export default { fetch }`). */
+	readonly serverEntry: URL;
+	/** The directory of static client files. */
+	readonly clientDir: URL;
+}
+
+export function isStartModule(
+	module: unknown,
+): module is { default: StartEntry } {
+	if (typeof module !== "object" || module === null || !("default" in module)) {
+		return false;
+	}
+	const entry: unknown = module.default;
+	return (
+		typeof entry === "object" &&
+		entry !== null &&
+		"fetch" in entry &&
+		typeof entry.fetch === "function"
+	);
+}
+
+async function loadEntry(serverEntry: URL): Promise<StartEntry | undefined> {
+	try {
+		const module: unknown = await import(serverEntry.href);
+		return isStartModule(module) ? module.default : undefined;
+	} catch (e: unknown) {
+		logger.error({ err: e }, "cannot load the web build (run pnpm build)");
+		return undefined;
+	}
+}
+
+/** The built web app: its request handler and the readiness probe behind `/readyz`. */
+export interface ProductionWeb {
+	/** The web handler for `createApp({ web })`. */
+	readonly handler: WebHandler;
+	/** Resolves `true` once the server bundle is loaded, `false` when it cannot be (no build). */
+	readonly ready: () => Promise<boolean>;
+}
+
+/**
+ * Serves the built web app: files from dist/client (hashed `/assets/*` with
+ * immutable caching), everything else through TanStack Start's handler with
+ * the request's CSP nonce in {@link NONCE_HEADER} (any client-sent value is
+ * overwritten). The server bundle starts loading at once, not on the first
+ * page request: importing it takes seconds (React, the router and every
+ * module the OpenTelemetry loader hook wraps), so `ready` keeps `/readyz` at
+ * 503 until it is in and no visitor waits for it. Without a build the process
+ * still starts, `/healthz` answers and pages fall through to the JSON 404.
+ * @param build - Location of the build; the dist output by default.
+ * @returns The handler and its readiness probe.
+ */
+export function productionWeb(build: WebBuild = BUILD): ProductionWeb {
+	const assets = serveStatic({
+		root: relative(process.cwd(), fileURLToPath(build.clientDir)),
+	});
+	const entry = loadEntry(build.serverEntry);
+	const handler: WebHandler = async (c, next) => {
+		const asset = await assets(c, () => Promise.resolve());
+		if (asset instanceof Response) {
+			// Set here, not in serveStatic's onFound: that hook runs after the response object is built.
+			if (c.req.path.startsWith("/assets/")) {
+				asset.headers.set(
+					"cache-control",
+					"public, max-age=31536000, immutable",
+				);
+			}
+			return asset;
+		}
+		const start = await entry;
+		if (start === undefined) {
+			await next();
+			return undefined;
+		}
+		const headers = new Headers(c.req.raw.headers);
+		headers.set(NONCE_HEADER, c.get("secureHeadersNonce") ?? "");
+		return start.fetch(new Request(c.req.raw, { headers }));
+	};
+	return {
+		handler,
+		ready: async () => (await entry) !== undefined,
+	};
+}

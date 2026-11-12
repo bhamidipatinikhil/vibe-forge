@@ -1,0 +1,12 @@
+# Paths that change the project's boundaries or its agent policy need a review by the owner.
+# Enforce with a ruleset that requires CODEOWNERS review (GitHub: Settings -> Rules -> Rulesets).
+/.github/                 @{{ github_owner }}
+/.claude/hooks/           @{{ github_owner }}
+/migrations/              @{{ github_owner }}
+/.dependency-cruiser.cjs  @{{ github_owner }}
+/docs/decisions/          @{{ github_owner }}
+/src/domain/              @{{ github_owner }}
+/flags/                   @{{ github_owner }}
+/db/                      @{{ github_owner }}
+/Dockerfile               @{{ github_owner }}
+/pnpm-workspace.yaml      @{{ github_owner }}

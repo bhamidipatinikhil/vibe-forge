@@ -1,0 +1,115 @@
+import type { MiddlewareHandler } from "hono";
+import { bodyLimit } from "hono/body-limit";
+import { csrf } from "hono/csrf";
+import { NONCE, secureHeaders } from "hono/secure-headers";
+import type { ErrorResponse } from "../schemas/error.js";
+import type { AppEnv, FlagsPort } from "./ports.js";
+
+type Env = AppEnv;
+
+/** Methods that never change state; the write kill switch lets them through. */
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/** Flag that turns every state-changing `/api/v1/*` request into a 503 (docs/runbooks/rollback.md step 1). */
+export const KILL_SWITCH_WRITES = "kill-switch-writes";
+
+/** Options of {@link securityHeaders}. */
+export interface SecurityHeadersOptions {
+	/** Extra `connect-src` origins (Sentry ingest, Umami). */
+	readonly connectSrc: readonly string[];
+	/** Send the CSP as report-only (the Vite dev server injects scripts and styles without a nonce). */
+	readonly reportOnly: boolean;
+}
+
+/**
+ * Hono's secure-headers with a per-request nonce. Every inline `<script>` and
+ * `<style>` the server renders carries `c.get("secureHeadersNonce")`; nothing
+ * else may execute.
+ * @param options - Extra origins and the report-only switch.
+ * @returns The middleware.
+ */
+export function securityHeaders(
+	options: SecurityHeadersOptions,
+): MiddlewareHandler<Env> {
+{%- if kind == 'web' %}
+	// 'strict-dynamic': scripts loaded by a nonced script (the Vite chunks) are trusted; host lists are ignored.
+	// style-src-attr 'unsafe-inline': Base UI positions popups with style attributes, which cannot carry a nonce.
+	const policy = {
+		defaultSrc: ["'self'"],
+		scriptSrc: [NONCE, "'strict-dynamic'"],
+		styleSrc: ["'self'", NONCE],
+		styleSrcAttr: ["'unsafe-inline'"],
+		imgSrc: ["'self'", "data:"],
+		fontSrc: ["'self'"],
+		connectSrc: ["'self'", ...options.connectSrc],
+		objectSrc: ["'none'"],
+		baseUri: ["'none'"],
+		formAction: ["'self'"],
+		frameAncestors: ["'none'"],
+	};
+{%- else %}
+	// A JSON API plus one HTML status page whose only inline content is a nonced <style> block.
+	const policy = {
+		defaultSrc: ["'none'"],
+		styleSrc: [NONCE],
+		imgSrc: ["'self'"],
+		connectSrc: ["'self'", ...options.connectSrc],
+		baseUri: ["'none'"],
+		formAction: ["'none'"],
+		frameAncestors: ["'none'"],
+	};
+{%- endif %}
+	return options.reportOnly
+		? secureHeaders({ contentSecurityPolicyReportOnly: policy })
+		: secureHeaders({ contentSecurityPolicy: policy });
+}
+
+/** Options of {@link apiGuards}. */
+export interface ApiGuardOptions {
+	/** Largest accepted body in bytes. */
+	readonly maxBodyBytes: number;
+	/** The app's public origin; cross-site form posts from anywhere else are refused. */
+	readonly appUrl: string;
+	/** Source of the write kill switch. */
+	readonly flags: FlagsPort;
+}
+
+function errorJson(code: string, message: string): ErrorResponse {
+	return { error: { code, message } };
+}
+
+/**
+ * The `/api/*` guards: body-limit (413), csrf (403 on a cross-site form post)
+ * and the write kill switch (503 on state-changing `/api/v1/*` requests while
+ * the `kill-switch-writes` flag is on; `/api/auth/*` stays available).
+ * @param options - Limits, origin and flags.
+ * @returns The middlewares, in order.
+ */
+export function apiGuards(options: ApiGuardOptions): MiddlewareHandler<Env>[] {
+	const origin = new URL(options.appUrl).origin;
+	return [
+		bodyLimit({
+			maxSize: options.maxBodyBytes,
+			onError: (c) =>
+				c.json(
+					errorJson("payload_too_large", "Request body is too large"),
+					413,
+				),
+		}),
+		csrf({ origin }),
+		async (c, next) => {
+			if (
+				!SAFE_METHODS.has(c.req.method) &&
+				c.req.path.startsWith("/api/v1/") &&
+				(await options.flags.isEnabled(KILL_SWITCH_WRITES, false))
+			) {
+				return c.json(
+					errorJson("maintenance", "Writes are temporarily disabled"),
+					503,
+				);
+			}
+			await next();
+			return undefined;
+		},
+	];
+}

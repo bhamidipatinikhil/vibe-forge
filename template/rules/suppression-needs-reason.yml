@@ -1,0 +1,21 @@
+id: suppression-needs-reason
+language: TypeScript
+severity: error
+message: 'A suppression comment (eslint-disable, biome-ignore, @ts-expect-error, @ts-ignore) must carry "reason: <why>".'
+note: 'Write `// eslint-disable-next-line <rule> -- reason: <why>` (ESLint only reads text after " -- " as a description), `// biome-ignore lint/<group>/<rule>: reason: <why>` or `// @ts-expect-error reason: <why>`. The lefthook pre-commit job and this rule accept the same string, so a comment that passes one passes the other.'
+rule:
+  kind: comment
+  regex: 'eslint-disable|biome-ignore|@ts-(ignore|expect-error)'
+  not:
+    regex: '(reason|because):'
+---
+id: suppression-needs-reason-tsx
+language: Tsx
+severity: error
+message: 'A suppression comment (eslint-disable, biome-ignore, @ts-expect-error, @ts-ignore) must carry "reason: <why>".'
+note: 'Write `// eslint-disable-next-line <rule> -- reason: <why>` (ESLint only reads text after " -- " as a description), `// biome-ignore lint/<group>/<rule>: reason: <why>` or `// @ts-expect-error reason: <why>`. The lefthook pre-commit job and this rule accept the same string, so a comment that passes one passes the other.'
+rule:
+  kind: comment
+  regex: 'eslint-disable|biome-ignore|@ts-(ignore|expect-error)'
+  not:
+    regex: '(reason|because):'

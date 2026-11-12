@@ -1,0 +1,87 @@
+// scripts/dev.ts — `pnpm dev`: the same Hono app as production (probes, API, security headers, auth), with Vite in
+// middleware mode serving the web app. Vite's own requests (/@vite/client, /src/..., HMR) go through its connect
+// stack; every page is rendered by the TanStack Start entry loaded through Vite's SSR module runner, which is the
+// `{ fetch }` shape production serves from dist/server/server.js. The CSP is report-only here because Vite injects
+// scripts and styles without a nonce. `node --watch` restarts on server-side changes; the UI hot-reloads.
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { RESPONSE_ALREADY_SENT } from "@hono/node-server/utils/response";
+import { createServer, isRunnableDevEnvironment } from "vite";
+import type { WebHandler } from "../src/app/ports.js";
+import { env } from "../src/env.js";
+import { startServer } from "../src/infra/server.js";
+import { NONCE_HEADER } from "../src/infra/web.js";
+
+interface StartEntry {
+	readonly default: { readonly fetch: (request: Request) => Promise<Response> };
+}
+
+interface NodeBindings {
+	readonly incoming: IncomingMessage;
+	readonly outgoing: ServerResponse;
+}
+
+function nodeBindings(bindings: unknown): NodeBindings {
+	if (
+		typeof bindings === "object" &&
+		bindings !== null &&
+		"incoming" in bindings &&
+		"outgoing" in bindings
+	) {
+		return bindings as NodeBindings;
+	}
+	throw new Error("scripts/dev.ts needs @hono/node-server bindings");
+}
+
+const vite = await createServer({
+	server: { middlewareMode: true },
+	appType: "custom",
+});
+const ssr = vite.environments.ssr;
+if (!isRunnableDevEnvironment(ssr)) {
+	throw new Error(
+		"Vite has no runnable SSR environment (is the TanStack Start plugin in vite.config.ts?)",
+	);
+}
+
+const web: WebHandler = async (c) => {
+	const { incoming, outgoing } = nodeBindings(c.env);
+	const servedByVite = await new Promise<boolean>((resolve, reject) => {
+		outgoing.once("finish", () => {
+			resolve(true);
+		});
+		vite.middlewares(incoming, outgoing, (error?: unknown) => {
+			if (error === undefined) {
+				resolve(false);
+			} else {
+				reject(
+					error instanceof Error
+						? error
+						: new Error("Vite middleware failed", { cause: error }),
+				);
+			}
+		});
+	});
+	if (servedByVite) {
+		return RESPONSE_ALREADY_SENT;
+	}
+	const entry = await ssr.runner.import<StartEntry>(
+		"virtual:tanstack-start-server-entry",
+	);
+	const headers = new Headers(c.req.raw.headers);
+	headers.set(NONCE_HEADER, c.get("secureHeadersNonce") ?? "");
+	return entry.default.fetch(new Request(c.req.raw, { headers }));
+};
+
+const running = await startServer({
+	port: env.PORT,
+	host: env.HOST,
+	shutdownDeadlineMs: 2_000,
+	web,
+	cspReportOnly: true,
+});
+const stop = (signal: NodeJS.Signals): void => {
+	running.shutdown(signal);
+	void vite.close();
+};
+process.once("SIGTERM", stop);
+process.once("SIGINT", stop);

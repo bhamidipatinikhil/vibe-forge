@@ -1,0 +1,4 @@
+# ZAP baseline rules (zaproxy/action-baseline rules_file_name). Tab-separated: <alert id>	<IGNORE|WARN|FAIL>	<note>
+# Only IGNORE what cannot apply to the CI target; CI scans the app over plain HTTP on 127.0.0.1, so the Secure cookie flag is moot.
+10011	IGNORE	(Cookie Without Secure Flag)
+10015	WARN	(Incomplete or No Cache-control and Pragma HTTP Header Set)

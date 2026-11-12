@@ -1,0 +1,88 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import { createApp } from "../app/app.js";
+import { logger } from "../logger.js";
+import { isStartModule, NONCE_HEADER, productionWeb } from "./web.js";
+
+vi.hoisted(() => {
+	vi.stubEnv("LOG_LEVEL", "silent");
+});
+
+// A miniature `vite build` output: a server bundle that echoes the nonce it received, and one hashed asset.
+// Inside the project: serveStatic refuses a root outside the working directory. reports/ is git-ignored.
+mkdirSync("reports", { recursive: true });
+const dist = mkdtempSync(join(process.cwd(), "reports", "web-build-"));
+mkdirSync(join(dist, "server"));
+mkdirSync(join(dist, "client", "assets"), { recursive: true });
+writeFileSync(
+	join(dist, "server", "server.js"),
+	`export default { fetch: (request) => Promise.resolve(new Response("ssr nonce=" + request.headers.get("${NONCE_HEADER}"), { headers: { "content-type": "text/html" } })) };\n`,
+);
+writeFileSync(
+	join(dist, "client", "assets", "app-abc123.js"),
+	"console.log(1);\n",
+);
+writeFileSync(join(dist, "client", "robots.txt"), "User-agent: *\n");
+const build = {
+	serverEntry: pathToFileURL(join(dist, "server", "server.js")),
+	clientDir: pathToFileURL(join(dist, "client/")),
+};
+
+afterAll(() => {
+	rmSync(dist, { recursive: true, force: true });
+});
+
+describe("productionWeb", () => {
+	const web = productionWeb(build);
+	const app = createApp({ web: web.handler });
+
+	it("is ready once the server bundle is loaded", async () => {
+		await expect(web.ready()).resolves.toBe(true);
+	});
+
+	it("serves hashed assets with immutable caching and other public files plainly", async () => {
+		const asset = await app.request("/assets/app-abc123.js");
+		expect(asset.status).toBe(200);
+		expect(asset.headers.get("cache-control")).toBe(
+			"public, max-age=31536000, immutable",
+		);
+		const robots = await app.request("/robots.txt");
+		expect(await robots.text()).toContain("User-agent");
+		expect(robots.headers.get("cache-control")).toBeNull();
+	});
+
+	it("renders pages through the server bundle with the request's CSP nonce, overwriting a client-sent one", async () => {
+		const page = await app.request("/blog", {
+			headers: { [NONCE_HEADER]: "forged" },
+		});
+		const nonce = /'nonce-([^']+)'/.exec(
+			page.headers.get("content-security-policy") ?? "",
+		)?.[1];
+		expect(await page.text()).toBe(`ssr nonce=${nonce ?? "missing"}`);
+	});
+
+	it("is not ready, falls through to the JSON 404 and logs once while no web build exists", async () => {
+		const error = vi.spyOn(logger, "error");
+		const absent = productionWeb({
+			serverEntry: pathToFileURL(join(dist, "nope.js")),
+			clientDir: build.clientDir,
+		});
+		const missing = createApp({ web: absent.handler });
+		await expect(absent.ready()).resolves.toBe(false);
+		expect((await missing.request("/")).status).toBe(404);
+		expect((await missing.request("/about")).status).toBe(404);
+		expect(error).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("isStartModule", () => {
+	it("accepts only a module whose default export has a fetch function", () => {
+		expect(isStartModule({ default: { fetch: () => undefined } })).toBe(true);
+		expect(isStartModule({ default: { fetch: "no" } })).toBe(false);
+		expect(isStartModule({ default: null })).toBe(false);
+		expect(isStartModule({})).toBe(false);
+		expect(isStartModule(null)).toBe(false);
+	});
+});

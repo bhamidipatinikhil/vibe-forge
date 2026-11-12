@@ -1,0 +1,75 @@
+{% if payments == 'razorpay' %}import { err, ok } from "neverthrow";
+import { validateWebhookSignature } from "razorpay/dist/utils/razorpay-utils.js";
+import { z } from "zod";
+import type { WebhookVerifier } from "../app/routes/payments.js";
+
+const EventSchema = z.object({ event: z.string() });
+
+/**
+ * Razorpay webhook verification: `X-Razorpay-Signature` is the HMAC-SHA256
+ * of the raw body with the webhook secret (the SDK compares in constant time).
+ * @param secret - `RAZORPAY_WEBHOOK_SECRET`; unset leaves the route answering 503.
+ * @returns `{ payments }` to spread into the app options, or nothing.
+ */
+export function webhookVerifier(secret: string | undefined): {
+	payments?: WebhookVerifier;
+} {
+	if (secret === undefined) {
+		return {};
+	}
+	return {
+		payments: {
+			verify: (rawBody, headers) => {
+				const signature = headers.get("x-razorpay-signature");
+				if (
+					signature === null ||
+					!validateWebhookSignature(rawBody, signature, secret)
+				) {
+					return Promise.resolve(err("invalid-signature"));
+				}
+				const parsed = EventSchema.safeParse(JSON.parse(rawBody));
+				return Promise.resolve(
+					parsed.success
+						? ok({ type: parsed.data.event })
+						: err("invalid-signature"),
+				);
+			},
+		},
+	};
+}
+{% else %}import { webhooks } from "@polar-sh/sdk/2026-10";
+import { err, ok } from "neverthrow";
+import type { WebhookVerifier } from "../app/routes/payments.js";
+
+/**
+ * Polar webhook verification (Standard Webhooks: `webhook-id`,
+ * `webhook-timestamp`, `webhook-signature`; replayed or stale deliveries fail),
+ * against the 2026-10 API version of the event payloads.
+ * @param secret - `POLAR_WEBHOOK_SECRET`; unset leaves the route answering 503.
+ * @returns `{ payments }` to spread into the app options, or nothing.
+ */
+export function webhookVerifier(secret: string | undefined): {
+	payments?: WebhookVerifier;
+} {
+	if (secret === undefined) {
+		return {};
+	}
+	return {
+		payments: {
+			verify: async (rawBody, headers) => {
+				try {
+					const event = await webhooks.validateEvent(
+						rawBody,
+						Object.fromEntries(headers),
+						secret,
+					);
+					return ok({ type: event.type });
+				} catch {
+					// Any failure (bad signature, stale timestamp, unknown payload) is a rejected delivery.
+					return err("invalid-signature");
+				}
+			},
+		},
+	};
+}
+{% endif %}

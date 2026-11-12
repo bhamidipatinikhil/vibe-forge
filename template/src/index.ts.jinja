@@ -1,0 +1,34 @@
+import { env } from "./env.js";
+import { startServer } from "./infra/server.js";
+{%- if kind == 'web' %}
+import { productionWeb } from "./infra/web.js";
+{%- endif %}
+
+/** Grace period for in-flight requests before the process is forced to exit. */
+const SHUTDOWN_DEADLINE_MS = 10_000;
+{%- if kind == 'web' %}
+
+const web = productionWeb();
+{%- endif %}
+
+const running = await startServer({
+	port: env.PORT,
+	host: env.HOST,
+	shutdownDeadlineMs: SHUTDOWN_DEADLINE_MS,
+{%- if kind == 'web' %}
+	web: web.handler,
+	webReady: web.ready,
+{%- endif %}
+});
+
+/** The listening HTTP server (put a TLS-terminating proxy in front of it). */
+export const server = running.server;
+
+/** Drains {@link server}; registered once for SIGTERM and once for SIGINT. */
+export const shutdown = running.shutdown;
+
+/** Settles once a shutdown has closed {@link server} and released every resource. */
+export const stopped = running.stopped;
+
+process.once("SIGTERM", shutdown);
+process.once("SIGINT", shutdown);

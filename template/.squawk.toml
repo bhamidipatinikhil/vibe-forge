@@ -1,0 +1,3 @@
+# squawk configuration (https://squawkhq.com). `just squawk` lints changed migrations locally, in lefthook and in CI.
+pg_version = "18.0"
+assume_in_transaction = true

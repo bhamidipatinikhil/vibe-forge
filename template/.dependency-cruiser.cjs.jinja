@@ -1,0 +1,153 @@
+// .dependency-cruiser.cjs — the executable form of the architecture ADRs (0001, 0002, 0003); the same layer list
+// appears in AGENTS.md. Changing this file needs a new ADR in the same change (scripts/docs-drift.sh), and
+// tests/arch/modules.test.ts proves that every rule on src/ paths (layers and modules) still fires.
+module.exports = {
+	forbidden: [
+		{
+			name: "no-circular",
+			severity: "error",
+			from: {},
+			to: { circular: true },
+		},
+		{
+			name: "no-orphans",
+			severity: "warn",
+{%- if kind == 'web' %}
+			from: {
+				orphan: true,
+				pathNot: [
+					"\\.d\\.ts$",
+					"(^|/)\\.[^/]+",
+					"^src/ui/routes/",
+					"^src/ui/(router|client)\\.tsx$",
+					"^src/ui/server\\.ts$",
+				],
+			},
+{%- else %}
+			from: { orphan: true, pathNot: ["\\.d\\.ts$", "(^|/)\\.[^/]+"] },
+{%- endif %}
+			to: {},
+		},
+		{
+			name: "domain-independent",
+			comment:
+				"src/domain is pure: it imports nothing from src/ outside src/domain (a new directory is covered too).",
+			severity: "error",
+			from: { path: "^src/domain/" },
+			to: { path: "^src/", pathNot: "^src/domain/" },
+		},
+		{
+			name: "app-not-infra-or-ui",
+			comment:
+				"src/app talks to the outside world through src/app/ports.ts; src/infra implements the ports.",
+			severity: "error",
+			from: { path: "^src/app/", pathNot: "\\.(test|spec)\\.tsx?$" },
+			to: { path: "^src/(infra|ui)/" },
+		},
+		// Zod boundary schemas may build on src/domain only: they are imported by app, never the other way round
+		{
+			name: "schemas-only-domain",
+			severity: "error",
+			from: { path: "^src/schemas/" },
+			to: { path: "^src/", pathNot: "^src/(domain|schemas)/" },
+		},
+		{
+			name: "server-not-ui",
+			comment:
+				"The server never imports the web app; Vite bundles src/ui and src/infra/web.ts loads the build.",
+			severity: "error",
+			from: { path: "^src/", pathNot: "^src/ui/" },
+			to: { path: "^src/ui/" },
+		},
+{%- if kind == 'web' %}
+		{
+			name: "ui-not-server",
+			comment:
+				"src/ui runs in the browser too: it imports nothing from src/ outside src/ui (modules included) and reaches the server through the documented HTTP API only.",
+			severity: "error",
+			from: { path: "^src/ui/" },
+			to: { path: "^src/", pathNot: "^src/ui/" },
+		},
+		{
+			name: "ui-no-node-core",
+			comment:
+				"Node built-ins do not exist in the browser (src/ui/server.ts is TanStack Start's server entry).",
+			severity: "error",
+			from: { path: "^src/ui/", pathNot: "^src/ui/server\\.ts$" },
+			to: { dependencyTypes: ["core"] },
+		},
+{%- endif %}
+		{
+			name: "not-on-purpose",
+			comment:
+				"Deliberately not used; see docs/decisions/0002-stack.md for why and what to use instead.",
+			severity: "error",
+			from: {},
+			to: {
+				path: "node_modules/(next|prisma|@prisma/[^/]+|drizzle-orm|drizzle-kit|ioredis|redis|iovalkey|@valkey/[^/]+|meilisearch|inngest|@trigger\\.dev/[^/]+|unleash-client|@unleash/[^/]+|@clerk/[^/]+)/",
+			},
+		},
+		// Feature modules (docs/decisions/0003-feature-modules.md): one product area per src/modules/<name>/, server side,
+		// entered through its index.ts. These rules hold from day one, before the first module exists.
+		{
+			name: "no-cross-module-internals",
+			comment:
+				"A module reaches another module through that module's index.ts only.",
+			severity: "error",
+			from: { path: "^src/modules/([^/]+)/" },
+			to: {
+				path: "^src/modules/",
+				pathNot: ["^src/modules/$1/", "^src/modules/[^/]+/index\\.ts$"],
+			},
+		},
+		{
+			name: "modules-via-index-from-outside",
+			comment:
+				"Code outside src/modules enters a module through its index.ts only.",
+			severity: "error",
+			from: { path: "^src/", pathNot: "^src/modules/" },
+			to: {
+				path: "^src/modules/[^/]+/",
+				pathNot: "^src/modules/[^/]+/index\\.ts$",
+			},
+		},
+		{
+			name: "module-domain-pure",
+			comment:
+				"A module's domain code (domain.ts or domain/) is pure like src/domain: it imports src/domain and its own module's domain only.",
+			severity: "error",
+			from: { path: "^src/modules/([^/]+)/domain(\\.ts$|/)" },
+			to: {
+				path: "^src/",
+				pathNot: ["^src/domain/", "^src/modules/$1/domain(\\.ts$|/)"],
+			},
+		},
+		{
+			name: "module-not-infra",
+			comment:
+				"src/infra/server.ts injects a module's database, mailer and other dependencies; type-only imports (the generated database types) are fine.",
+			severity: "error",
+			from: { path: "^src/modules/", pathNot: "\\.(test|spec)\\.tsx?$" },
+			to: { path: "^src/infra/", dependencyTypesNot: ["type-only"] },
+		},
+		{
+			name: "not-to-dev-dep",
+			severity: "error",
+			from: { path: "^src", pathNot: ["\\.(test|spec)\\.tsx?$", "\\.d\\.ts$"] },
+			to: { dependencyTypes: ["npm-dev"], dependencyTypesNot: ["type-only"] },
+		},
+	],
+	options: {
+		tsConfig: { fileName: "./tsconfig.json" },
+		tsPreCompilationDeps: true,
+		// Record edges into node_modules but do not cruise inside them: otherwise the no-circular rule reports
+		// cycles inside third-party packages (44 of them in @grpc/grpc-js alone, pulled in by the OTel exporters).
+		doNotFollow: { path: ["node_modules"] },
+{%- if kind == 'web' %}
+		exclude: { path: ["^src/ui/paraglide/", "^src/ui/routeTree\\.gen\\.ts$"] },
+		enhancedResolveOptions: {
+			extensions: [".ts", ".tsx", ".js", ".jsx", ".json"],
+		},
+{%- endif %}
+	},
+};

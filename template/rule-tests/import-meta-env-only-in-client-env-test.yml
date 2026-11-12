@@ -1,0 +1,5 @@
+id: import-meta-env-only-in-client-env-ts
+valid:
+  - "const dsn = clientEnv.VITE_SENTRY_DSN"
+invalid:
+  - "const dsn = import.meta.env.VITE_SENTRY_DSN"

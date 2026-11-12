@@ -1,0 +1,16 @@
+# Answer set for the template's own tests: kind=web with every optional integration on (Razorpay, Anthropic SDK,
+# charts, rich text), Python/uv, and a scoped npm package name (renders minimumReleaseAgeExclude for the scope).
+# Usage: nix run github:NixOS/nixpkgs/nixos-26.05#copier -- copy --trust --defaults --data-file tests/answers/web-full.yml . out
+project_name: Gate Test Web Full
+project_slug: gate-test-web-full
+github_owner: example-org
+npm_scope: example-org
+kind: web
+node_major: 26
+with_playwright: true
+with_python: true
+with_devcontainer: false
+payments: razorpay
+with_ai: true
+with_charts: true
+with_rich_text: true

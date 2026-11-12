@@ -1,0 +1,10 @@
+---
+paths:
+  - "src/modules/**"
+---
+- A module is one product area (`chat`, `courses`, `billing`), server side only, in `src/modules/<name>/`: its domain logic, Zod schemas, Hono routes and Kysely queries live together.{% if kind == 'web' %} Its pages stay in `src/ui/routes/` and call its HTTP API; the UI never imports a module.{% endif %} A small feature can stay a few files in the layers instead.
+- `index.ts` is the public API: everything outside the module imports that file only, other modules included. Export a `register<Name>Routes(app, deps)` for `src/app/app.ts` and the types callers need, nothing more.
+- Pure logic lives in `domain.ts` (or `domain/`): no IO; it imports only `src/domain` and the module's own domain. The database, mailer, jobs and flags are parameters, wired in `src/infra/server.ts`; import from `src/infra` for types only (the generated `DB`).
+- A module owns its tables (a dbmate migration, like any other) and its pg-boss queues. To make another module act, call its `index.ts` or enqueue its job; never query its tables.
+- Routes follow `.claude/rules/api.md` (OpenAPI entry, access-matrix row, test); tests sit next to the code and use the real Postgres.
+- dependency-cruiser enforces this (`no-cross-module-internals`, `modules-via-index-from-outside`, `module-domain-pure`, `module-not-infra`); the reasons are in `docs/decisions/0003-feature-modules.md`.

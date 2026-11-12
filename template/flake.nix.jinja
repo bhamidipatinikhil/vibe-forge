@@ -1,0 +1,60 @@
+{
+  description = "{{ project_name }} (generated from vibe-forge; see .copier-answers.yml)";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";            # toolchain: stable branch; flake.lock bumped weekly by Renovate
+    nixpkgs-agents.url = "github:NixOS/nixpkgs/nixos-unstable";  # agent CLIs only (no `follows`, so the toolchain stays stable)
+  };
+  outputs = { self, nixpkgs, nixpkgs-agents, ... }:
+    let
+      systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
+      forAllSystems = nixpkgs.lib.genAttrs systems;
+    in {
+      devShells = forAllSystems (system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+          agents = import nixpkgs-agents { inherit system; config.allowUnfree = true; };   # claude-code is unfree
+          node = pkgs.nodejs_{{ node_major }};
+          pnpm = pkgs.pnpm_11.override { nodejs-slim = node; };   # package.json "packageManager" must equal this version (just doctor asserts it); override: run pnpm on the same Node as the shell (nixpkgs warns on the deprecated `nodejs` argument)
+          {%- if with_playwright %}
+          browsers = pkgs.playwright-driver.browsers-chromium.override { withChromiumHeadlessShell = true; };   # Playwright 1.59 runs headless tests on the "chromium headless shell"; plain browsers-chromium omits it (nixpkgs default withChromiumHeadlessShell = false)
+          {%- endif %}
+          toolchain = with pkgs; [
+            {%- if with_python %}
+            python312 uv                                          # listed first on purpose: semgrep propagates its own python3 (3.13) onto PATH right after itself, and PATH follows list order, so python312 must precede it for `python` to match UV_PYTHON
+            {%- else %}
+            python3                                               # security-guidance plugin (.claude/settings.json) needs Python >= 3.10 + venv/pip on PATH; kept explicit although semgrep already propagates this same python3 (3.13); with_python supplies python312 instead
+            {%- endif %}
+            node pnpm git gh just jq ripgrep fd gitleaks lefthook
+            typescript-language-server                            # binary behind the typescript-lsp Claude Code plugin
+            semgrep trufflehog zizmor shellcheck                  # verify on your lock: nix eval nixpkgs#<name>.version; OSV-Scanner runs in CI only (supply-chain.yml)
+            postgresql_18                                         # local + test database (tests start a throwaway cluster on 127.0.0.1); pg_dump for db/schema.sql
+            dbmate squawk                                         # migrations (migrations/*.sql, db/schema.sql) and their lint (expand/contract safety)
+            sops age                                              # encrypted secrets: sops exec-env secrets/dev.enc.env '...' (see .sops.yaml)
+            mailpit k6                                            # local mail catcher (just mail) and load tests (just load)
+            agents.oasdiff                                        # breaking-API-change check (just api-diff); not in nixos-26.05, so it comes from the nixos-unstable input
+            agents.claude-code                                    # wrapper adds ripgrep/bubblewrap/socat, DISABLE_AUTOUPDATER=1
+            {%- if with_playwright %}
+            browsers
+            {%- endif %}
+          ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.bubblewrap pkgs.socat ];
+          envVars = {
+            NODE_MAJOR = "{{ node_major }}";
+            {%- if with_playwright %}
+            PLAYWRIGHT_BROWSERS_PATH = "${browsers}";               # npm @playwright/test MUST equal this driver version
+            PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+            PLAYWRIGHT_VERSION = pkgs.playwright-driver.version;
+            {%- endif %}
+            {%- if with_python %}
+            UV_PYTHON = "${pkgs.python312}/bin/python";
+            UV_PYTHON_DOWNLOADS = "never";
+            {%- endif %}
+          };
+          mkShell = extra: pkgs.mkShell ({ packages = toolchain; } // envVars // extra);
+        in {
+          quiet = mkShell { };                                     # CI, hooks, agents: nix develop .#quiet -c just check
+          default = mkShell {
+            shellHook = ''echo "node $(node --version) | pnpm $(pnpm --version) | claude $(claude --version 2>/dev/null | head -1)"'';
+          };
+        });
+    };
+}

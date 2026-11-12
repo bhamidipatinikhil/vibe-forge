@@ -1,0 +1,50 @@
+---
+name: study-reference
+description: Study a reference repository outside this project, read-only, and turn one of its features into a spec for building it here. Run it without a feature first for an inventory.
+disable-model-invocation: true
+argument-hint: <reference-dir> [feature]
+allowed-tools: Read Grep Glob
+---
+Arguments: $ARGUMENTS. The first is a directory outside this project; the rest, if any, names one feature.
+
+1. **Preconditions.**
+   - The directory must be outside this project and added to this session with `claude --add-dir <dir>` or
+     `/add-dir <dir>`. Reads outside the project are blocked on purpose.
+   - If it is inside the project, stop: it would be linted, scanned and possibly committed.
+   - Never install, build, run or edit anything in it.
+2. **Licence.** Read its `LICENSE*` or `COPYING*` and the `license` field of its `package.json`. Note the commit:
+   `.git/HEAD`, then the ref file or `packed-refs` line it names.
+   - No licence, a proprietary one, or copyleft (GPL, AGPL, LGPL, MPL, EUPL): ideas only. Copy no code, comments,
+     strings or assets.
+   - Permissive (MIT, Apache-2.0, BSD, ISC): still re-implement from the spec. A copied block needs its licence notice
+     and a reason in the PR.
+3. **Without a feature:** list the repository's user-visible features, one line each, with the files that implement
+   them. Then stop and ask which one to study. Write nothing.
+4. **With a feature:** read only what implements it: routes, models or schema, UI flow, jobs, and its tests and
+   fixtures. Stop after about 40 files and list what you skipped. Collect:
+   - user-visible behaviour and states;
+   - the data model: entities, relations, constraints, indexes;
+   - the operations: inputs, outputs, who may call them;
+   - background and real-time work;
+   - the edge cases their code and tests handle;
+   - the authorization rules.
+5. **Translate to this project, never to their stack.**
+   - Tables: an expand-only dbmate migration sketch.
+   - Endpoints: Hono routes with Zod schemas, each with an access-matrix row; Kysely queries.
+   - Their queues and cron: pg-boss.
+   - Their WebSockets or Redis pub/sub: `streamSSE` (plus Postgres LISTEN/NOTIFY across instances).
+   - Their auth: better-auth.
+   - Rollout: a flag in `flags/flags.json`.
+   - Anything in ADR 0002's "Not using, on purpose" table maps to its "Use instead" column. If nothing fits, say an ADR
+     is needed and stop there.
+6. **Write `plans/<feature-slug>.md` and nothing else.** No code beyond SQL and type sketches. It contains:
+   - the goal;
+   - acceptance tests: Vitest{% if with_playwright %} and Playwright{% endif %} test names;
+   - the files you expect to touch: a module in `src/modules/<name>/` when the feature has its own tables and routes
+     (`.claude/rules/modules.md`);
+   - the migration sketch and the endpoints;{% if kind == 'web' %}
+   - the UI states;{% endif %}
+   - the flag;
+   - at most 3 open questions;
+   - a "Reference" section: repository, commit, licence, files read.
+7. **Stop.** Implementation starts in a fresh session from the plan (`docs/PLAYBOOK.md` §1, tier B or C).

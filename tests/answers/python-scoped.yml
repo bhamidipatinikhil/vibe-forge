@@ -1,0 +1,16 @@
+# Answer set for the template's own tests: kind=service with Playwright, Python/uv, Razorpay, the AI integration and a
+# scoped npm package name (@example-org/gate-test-full, which also renders minimumReleaseAgeExclude).
+# with_devcontainer stays false: the question is declared but no .devcontainer/ is generated yet, and copier.yml
+# rejects `true` so the answer cannot silently do nothing. Add a devcontainer answer set when the feature ships.
+# Usage: nix run github:NixOS/nixpkgs/nixos-26.05#copier -- copy --trust --defaults --data-file tests/answers/python-scoped.yml . out
+project_name: Gate Test Full
+project_slug: gate-test-full
+github_owner: example-org
+npm_scope: example-org
+kind: service
+node_major: 26
+with_playwright: true
+with_python: true
+with_devcontainer: false
+payments: razorpay
+with_ai: true

@@ -1,0 +1,13 @@
+---
+title: Hello, World
+summary: The first post. Posts are MDX files in content/posts; the frontmatter is validated by content-collections.ts.
+date: "2026-11-03"
+---
+
+This post is rendered at build time: the MDX body compiles to a React component, so the browser runs no MDX
+compiler and the Content Security Policy needs no `unsafe-eval`.
+
+## Adding a post
+
+Create `content/posts/<slug>.mdx` with a `title`, a `summary` and a `date`. It appears on [the blog](/blog) and gets
+its own Open Graph image.

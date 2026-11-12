@@ -1,0 +1,25 @@
+// content-collections.ts — typed content: every content/posts/*.mdx is validated against the schema below at build
+// time and exposed as `allPosts` (import from "content-collections"). Only the frontmatter lives here; the MDX body
+// is compiled by @mdx-js/rollup (vite.config.ts) and loaded by src/ui/routes/blog/$slug.tsx.
+import { defineCollection, defineConfig } from "@content-collections/core";
+import { z } from "zod";
+
+const posts = defineCollection({
+	name: "posts",
+	directory: "content/posts",
+	include: "*.mdx",
+	schema: z.object({
+		title: z.string().min(1).max(120),
+		summary: z.string().min(1).max(300),
+		date: z.iso.date(),
+		content: z.string(),
+	}),
+	transform: (document) => ({
+		slug: document._meta.path,
+		title: document.title,
+		summary: document.summary,
+		date: document.date,
+	}),
+});
+
+export default defineConfig({ content: [posts] });

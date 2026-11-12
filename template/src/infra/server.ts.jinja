@@ -1,0 +1,193 @@
+import { type ServerType, serve } from "@hono/node-server";
+import { createApp } from "../app/app.js";
+{%- if kind == 'web' %}
+import type { WebHandler } from "../app/ports.js";
+{%- endif %}
+import { env } from "../env.js";
+import { logger } from "../logger.js";
+{%- if with_ai %}
+import { claudeSummarizer } from "./ai.js";
+{%- endif %}
+import { createAuth } from "./auth.js";
+import { createDatabase, databaseReachable } from "./db.js";
+import { createMailer } from "./email/mailer.js";
+import { sentryReporter } from "./errors.js";
+import { flagFileProvider, startFlags } from "./flags.js";
+import { startJobs } from "./jobs.js";
+{%- if kind == 'web' %}
+import { ogRenderer } from "./og.js";
+{%- endif %}
+{%- if payments != 'none' %}
+import { webhookVerifier } from "./payments.js";
+{%- endif %}
+
+/** Options of {@link startServer}. */
+export interface ServerOptions {
+	/** TCP port; 0 picks a free one. */
+	readonly port: number;
+	/** Interface to bind (`HOST`: loopback everywhere except inside the container). */
+	readonly host: string;
+	/** Grace period for in-flight requests before the process is forced to exit. */
+	readonly shutdownDeadlineMs: number;
+{%- if kind == 'web' %}
+	/** The web app: the built TanStack Start handler (src/infra/web.ts) or Vite in dev (scripts/dev.ts). */
+	readonly web?: WebHandler;
+	/** Readiness of {@link web}, reported as the `web` check of `/readyz` (production: the server bundle is loaded). */
+	readonly webReady?: () => Promise<boolean>;
+	/** Report-only CSP (dev: Vite injects scripts and styles without a nonce). */
+	readonly cspReportOnly?: boolean;
+{%- endif %}
+}
+
+/** What {@link startServer} returns: the listener and its drain routine. */
+export interface RunningServer {
+	/** The listening HTTP server. */
+	readonly server: ServerType;
+	/**
+	 * Stops accepting connections, flips `/readyz` to 503, waits for in-flight
+	 * requests, then stops the job workers, the flag provider and the database
+	 * pool and lets the process exit naturally so the OpenTelemetry SDK (which
+	 * flushes on the same signal) is not cut off. The deadline guards against
+	 * connections that never finish; a second call is a no-op.
+	 * @param signal - The signal that triggered the shutdown.
+	 */
+	readonly shutdown: (signal: NodeJS.Signals) => void;
+	/** Settles once a shutdown has closed the listener and released every resource (or failed doing so). */
+	readonly stopped: Promise<void>;
+}
+
+{%- if kind == 'web' %}
+/** Splits the comma-separated `CSP_CONNECT_SRC` list. */
+function origins(list: string): string[] {
+	return list
+		.split(",")
+		.map((entry) => entry.trim())
+		.filter((entry) => entry !== "");
+}
+{%- endif %}
+
+/**
+ * The composition root: opens the database pool, starts the job queue and
+ * the flag provider, configures better-auth, builds the app and binds it.
+ * A factory rather than module state, so every lifecycle test gets a fresh
+ * listener.
+ * @param options - Port, interface and drain deadline; `src/index.ts` takes them from `env`.
+ * @returns The listening server and its `shutdown` routine.
+ */
+export async function startServer(
+	options: ServerOptions,
+): Promise<RunningServer> {
+	const production = env.NODE_ENV === "production";
+	const db = createDatabase({
+		url: env.DATABASE_URL,
+		poolMax: env.DATABASE_POOL_MAX,
+	});
+	const mailer = createMailer({
+		from: env.EMAIL_FROM,
+		resendApiKey: env.RESEND_API_KEY,
+		mailpitUrl: env.MAILPIT_URL,
+		production,
+		logger,
+	});
+	if (mailer.isErr()) {
+		await db.destroy();
+		throw new Error(mailer.error);
+	}
+	const jobs = await startJobs({
+		databaseUrl: env.DATABASE_URL,
+		runWorkers: env.JOBS_ENABLED,
+		db,
+		mailer: mailer.value,
+		logger,
+	});
+	const flags = await startFlags(flagFileProvider(env.FLAGS_FILE));
+	const auth = createAuth({
+		db,
+		secret: env.BETTER_AUTH_SECRET,
+		appUrl: env.APP_URL,
+		sendEmail: jobs.enqueueEmail,
+		logger,
+	});
+	let draining = false;
+	const app = createApp({
+		readinessChecks: [
+			{ name: "accepting-connections", run: () => Promise.resolve(!draining) },
+			{ name: "database", run: () => databaseReachable(db) },
+{%- if kind == 'web' %}
+			...(options.webReady === undefined
+				? []
+				: [{ name: "web", run: options.webReady }]),
+{%- endif %}
+		],
+		auth,
+		flags,
+		errors: sentryReporter,
+		appUrl: env.APP_URL,
+		bodyLimitBytes: env.BODY_LIMIT_BYTES,
+{%- if kind == 'web' %}
+		connectSrc: origins(env.CSP_CONNECT_SRC),
+		cspReportOnly: options.cspReportOnly ?? false,
+		og: ogRenderer,
+		...(options.web === undefined ? {} : { web: options.web }),
+{%- endif %}
+{%- if payments == 'razorpay' %}
+		...webhookVerifier(env.RAZORPAY_WEBHOOK_SECRET),
+{%- elif payments == 'polar' %}
+		...webhookVerifier(env.POLAR_WEBHOOK_SECRET),
+{%- endif %}
+{%- if with_ai %}
+		...claudeSummarizer(env.ANTHROPIC_API_KEY, env.ANTHROPIC_MODEL),
+{%- endif %}
+	});
+	const server = serve(
+		{ fetch: app.fetch, hostname: options.host, port: options.port },
+		(info) => {
+			logger.info(
+				{ address: info.address, port: info.port, nodeEnv: env.NODE_ENV },
+				"listening",
+			);
+		},
+	);
+	let markStopped: () => void = () => undefined;
+	const stopped = new Promise<void>((resolve) => {
+		markStopped = resolve;
+	});
+	const release = async (): Promise<void> => {
+		await jobs.stop();
+		await flags.close();
+		await db.destroy();
+		logger.info("resources released");
+	};
+	const shutdown = (signal: NodeJS.Signals): void => {
+		if (draining) {
+			return;
+		}
+		draining = true;
+		logger.info({ signal }, "shutting down");
+		const deadline = setTimeout(() => {
+			logger.error(
+				{ deadlineMs: options.shutdownDeadlineMs },
+				"shutdown deadline hit",
+			);
+			process.exit(1);
+		}, options.shutdownDeadlineMs);
+		deadline.unref();
+		server.close((error) => {
+			clearTimeout(deadline);
+			if (error === undefined) {
+				logger.info("server closed");
+			} else {
+				// Still release below: open job workers and pools would otherwise keep the process alive.
+				logger.error({ err: error }, "server did not close cleanly");
+				process.exitCode = 1;
+			}
+			release()
+				.catch((e: unknown) => {
+					logger.error({ err: e }, "releasing resources failed");
+					process.exitCode = 1;
+				})
+				.finally(markStopped);
+		});
+	};
+	return { server, shutdown, stopped };
+}

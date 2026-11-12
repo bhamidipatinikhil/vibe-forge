@@ -1,0 +1,44 @@
+{
+	"$schema": "https://www.schemastore.org/tsconfig",
+	"compilerOptions": {
+		"strict": true,
+		"exactOptionalPropertyTypes": true,
+		"noUncheckedIndexedAccess": true,
+		"noPropertyAccessFromIndexSignature": true,
+		"noImplicitOverride": true,
+		"noImplicitReturns": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"allowUnreachableCode": false,
+		"allowUnusedLabels": false,
+		"isolatedModules": true,
+		"verbatimModuleSyntax": true,
+{%- if kind == 'web' %}
+		"module": "preserve",
+		"moduleResolution": "bundler",
+		"target": "es2024",
+		"lib": ["es2024", "dom", "dom.iterable"],
+		"jsx": "react-jsx",
+		"allowJs": true,
+		"types": ["node", "vitest/importMeta", "vite/client"],
+		"paths": { "content-collections": ["./.content-collections/generated"] },
+{%- else %}
+		"module": "nodenext",
+		"target": "es2024",
+		"jsx": "react-jsx",
+		"types": ["node", "vitest/importMeta"],
+{%- endif %}
+		"skipLibCheck": true,
+		"noEmit": true
+	},
+	"include": [
+		"src/**/*",
+		"tests/**/*",
+		"scripts/**/*",
+		".claude/hooks/tests/**/*",
+		"*.config.ts"{% if kind == 'web' %},
+		"content-collections.ts"{% endif %}
+	]{% if kind == 'web' %},
+	"exclude": ["src/ui/paraglide/**"]{% endif %}
+}

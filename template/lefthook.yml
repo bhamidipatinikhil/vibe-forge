@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://lefthook.dev/schema.json
+min_version: "2.1.0"
+pre-commit:
+  parallel: true
+  jobs:
+    - name: format-lint
+      glob: "*.{js,jsx,ts,tsx,json,jsonc,css,md,yml,yaml}"
+      run: pnpm exec biome check --write {staged_files}
+      stage_fixed: true
+    - name: typecheck
+      glob: "*.{ts,tsx}"
+      run: pnpm exec tsc --noEmit -p tsconfig.json
+    - name: secrets
+      run: gitleaks git --pre-commit --staged --redact --no-banner      # flags confirmed against gitleaks 8.30.1 (`gitleaks git --help`)
+    - name: no-secret-files
+      run: sh -c 'for f in {staged_files}; do case "$f" in .env|.env.*|*.pem|*.key) case "$f" in .env.example) ;; *) echo "refusing to commit $f"; exit 1;; esac;; esac; done'
+    - name: sast
+      glob: "*.{ts,tsx,js,jsx,mjs,cjs}"
+      run: semgrep scan --quiet --error --disable-version-check --config p/typescript --config p/nodejs --config p/react --config p/secrets {staged_files}
+    - name: actions-lint
+      glob: ".github/workflows/*.{yml,yaml}"   # zizmor exits 3 ("no inputs collected") on YAML that is not a workflow, e.g. issue templates
+      run: zizmor --min-severity medium {staged_files}   # block medium+ (template-injection, unpinned-uses...); low findings such as adhoc-packages on supply-chain.yml's intentional 'npm i -g sfw' still reach code scanning through zizmor-action (SARIF)
+    - name: migrations-lint
+      glob: "migrations/*.sql"
+      run: squawk {staged_files}                       # pg 18 and the transaction assumption come from .squawk.toml
+    - name: shellcheck
+      glob: "*.sh"
+      run: shellcheck {staged_files}
+    - name: suppressions-need-a-reason
+      glob: "*.{ts,tsx}"
+      run: "! grep -nE '(eslint-disable|biome-ignore|@ts-(ignore|expect-error))' {staged_files} | grep -vE '(reason|because):'"
+      fail_text: "Suppression comment without 'reason:'. Fix the code or justify it."
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: pnpm exec commitlint --edit {1}
+pre-push:
+  parallel: true
+  jobs:
+    - { name: gate, run: just check }
+    - { name: licenses, run: just licenses }

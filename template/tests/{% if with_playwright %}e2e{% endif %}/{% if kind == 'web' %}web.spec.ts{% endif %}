@@ -1,0 +1,74 @@
+// tests/e2e/web.spec.ts — the web app as a browser sees it: the enforcing Content Security Policy holds on every page
+// (every script carries the request nonce, nothing is blocked), an account can be created and used through the UI,
+// and the language switch works.
+import { expect, test } from "@playwright/test";
+
+const PAGES = [
+	"/",
+	"/blog",
+	"/blog/hello-world",
+	"/sign-in",
+	"/sign-up",
+] as const;
+
+for (const path of PAGES) {
+	test(`CSP: ${path} runs with the enforcing policy and no violations`, async ({
+		page,
+	}) => {
+		const violations: string[] = [];
+		page.on("console", (message) => {
+			if (
+				message.type() === "error" &&
+				message.text().includes("Content Security Policy")
+			) {
+				violations.push(message.text());
+			}
+		});
+		const response = await page.goto(path, { waitUntil: "networkidle" });
+		const policy = response?.headers()["content-security-policy"] ?? "";
+		expect(policy).toContain("'strict-dynamic'");
+		const nonce = /'nonce-([^']+)'/.exec(policy)?.[1];
+		expect(nonce).toBeDefined();
+		const unnonced = await page.locator("script:not([nonce])").count();
+		expect(unnonced).toBe(0);
+		expect(violations).toEqual([]);
+	});
+}
+
+test("an account is created, shown and signed out through the UI", async ({
+	page,
+}) => {
+	const email = `e2e-${String(Date.now())}@example.com`;
+	await page.goto("/sign-up", { waitUntil: "networkidle" });
+	await page.getByLabel("Name").fill("Ada Lovelace");
+	await page.getByLabel("Email").fill(email);
+	await page.getByLabel("Password").fill("correct-horse-battery");
+	await page.getByRole("button", { name: "Create an account" }).click();
+	await expect(page).toHaveURL(/\/account$/);
+	await expect(
+		page.getByText(`Signed in as Ada Lovelace (${email}).`),
+	).toBeVisible();
+	await page.getByRole("button", { name: "Sign out" }).click();
+	await expect(page.getByText("You are not signed in.")).toBeVisible();
+});
+
+test("the sign-in form explains a wrong password", async ({ page }) => {
+	await page.goto("/sign-in", { waitUntil: "networkidle" });
+	await page.getByLabel("Email").fill("nobody@example.com");
+	await page.getByLabel("Password").fill("wrong-password-1");
+	await page.getByRole("button", { name: "Sign in" }).click();
+	await expect(page.getByRole("alert")).toHaveText("Invalid email or password");
+});
+
+test("switching the language re-renders the page in German", async ({
+	page,
+}) => {
+	await page.goto("/", { waitUntil: "networkidle" });
+	await expect(page.locator("html")).toHaveAttribute("lang", "en");
+	await page.getByRole("button", { name: /English/ }).click();
+	await page.getByRole("option", { name: "Deutsch" }).click();
+	await expect(page.locator("html")).toHaveAttribute("lang", "de");
+	await expect(
+		page.getByRole("link", { name: "Konto", exact: true }),
+	).toBeVisible();
+});

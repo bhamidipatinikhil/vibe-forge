@@ -1,0 +1,23 @@
+import { expect, test } from "vitest";
+import { page } from "vitest/browser";
+import { render } from "vitest-browser-react";
+import { PriceChart, SignupsChart } from "./charts";
+
+test("SignupsChart draws a captioned bar chart", async () => {
+	await render(
+		<div style={{ width: 400, height: 300 }}>
+			<SignupsChart title="Sign-ups" data={[{ label: "Mon", value: 3 }]} />
+		</div>,
+	);
+	await expect.element(page.getByText("Sign-ups")).toBeVisible();
+});
+
+test("PriceChart mounts a captioned canvas chart and cleans up", async () => {
+	const screen = await render(
+		<PriceChart title="Value" points={[{ time: 1_798_761_600, value: 1 }]} />,
+	);
+	await expect
+		.element(page.getByRole("figure", { name: "Value" }))
+		.toBeVisible();
+	await screen.unmount();
+});

@@ -1,0 +1,16 @@
+# Answer set for the template's own tests: the default web project (kind=web, every optional integration off).
+# template/pnpm-lock.yaml is locked against exactly these answers (template-test asserts the first install keeps it).
+# Usage: nix run github:NixOS/nixpkgs/nixos-26.05#copier -- copy --trust --defaults --data-file tests/answers/default-web.yml . out
+project_name: Gate Test Web
+project_slug: gate-test-web
+github_owner: example-org
+npm_scope: ""
+kind: web
+node_major: 26
+with_playwright: true
+with_python: false
+with_devcontainer: false
+payments: none
+with_ai: false
+with_charts: false
+with_rich_text: false

@@ -1,0 +1,23 @@
+{
+	"$comment": "The server build (dist/node), run by `pnpm build` and type-checked by `just typecheck`.{% if kind == 'web' %} Only the server graph: src/ui is bundled by Vite, and checking this graph under nodenext without the DOM lib catches a UI or browser import leaking into server code.{% endif %}",
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"noEmit": false,
+		"outDir": "dist/node",
+		"rootDir": "src",
+		"declaration": false{% if kind == 'web' %},
+		"module": "nodenext",
+		"moduleResolution": "nodenext",
+		"lib": ["es2024"],
+		"allowJs": false,
+		"types": ["node"],
+		"paths": {}{% endif %}
+	},
+{%- if kind == 'web' %}
+	"include": [],
+	"files": ["src/index.ts", "src/instrumentation.ts"]
+{%- else %}
+	"include": ["src/**/*"],
+	"exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.spec.ts"]
+{%- endif %}
+}

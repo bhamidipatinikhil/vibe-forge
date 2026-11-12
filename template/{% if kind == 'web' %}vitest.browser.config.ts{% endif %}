@@ -1,0 +1,19 @@
+// vitest.browser.config.ts — the `browser` project: src/ui component tests rendered in the Nix Chromium (Vitest
+// browser mode with Playwright, vitest-browser-react).
+import viteReact from "@vitejs/plugin-react";
+import { playwright } from "@vitest/browser-playwright";
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+	plugins: [viteReact()],
+	test: {
+		name: "browser",
+		include: ["src/ui/**/*.test.tsx"],
+		browser: {
+			enabled: true,
+			headless: true,
+			provider: playwright(),
+			instances: [{ browser: "chromium" }],
+		},
+	},
+});

@@ -1,0 +1,27 @@
+// OpenCode V2 adapter: permission posture mirrors .claude/settings.json (ask on installs, pushes and
+// destructive commands; deny on secrets). Gates stay harness-independent: run `just check` (see AGENTS.md).
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "edit": "allow",
+    "bash": {
+      "*": "allow",
+      "git push*": "ask",
+      "git reset*": "ask",
+      "git clean*": "ask",
+      "rm -rf*": "ask",
+      "sudo*": "ask",
+      "pnpm add*": "ask",
+      "pnpm install*": "ask",
+      "pnpm update*": "ask",
+      "pnpm dlx*": "ask",
+      "npx*": "ask",
+      "dbmate*": "ask",
+      "psql*": "ask",
+      "curl*": "ask",
+      "wget*": "ask",
+      "nix flake update*": "ask"
+    },
+    "webfetch": "allow"
+  }
+}

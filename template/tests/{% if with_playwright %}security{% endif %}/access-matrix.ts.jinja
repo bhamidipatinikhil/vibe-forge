@@ -1,0 +1,82 @@
+// tests/security/access-matrix.ts — the declared access map every route must
+// appear in (OWASP ASVS 5.0 chapter V8, Authorization; see .claude/rules/api.md).
+// The specs in this directory turn it into deterministic tests, and the
+// completeness test fails when openapi.json documents an operation missing here.
+export const HTTP_METHODS = [
+	"GET",
+	"POST",
+	"PUT",
+	"PATCH",
+	"DELETE",
+	"HEAD",
+	"OPTIONS",
+	"TRACE",
+] as const;
+
+export type HttpMethod = (typeof HTTP_METHODS)[number];
+
+export interface RouteAccess {
+	/** OpenAPI path template exactly as it appears in openapi.json, e.g. "/api/v1/slug". */
+	readonly path: string;
+	readonly method: HttpMethod;
+	/** "public": served to anonymous callers. "authenticated": anonymous callers get 401/403. */
+	readonly auth: "public" | "authenticated";
+	/** HTTP status an anonymous request to `request` (or `path`) must receive. */
+	readonly expectedAnonymousStatus: number;
+	/** Concrete URL to call when `path` alone is not a valid request (query parameters, example ids). */
+	readonly request?: string;
+}
+
+const publicRoute = (
+	method: HttpMethod,
+	path: string,
+	expectedAnonymousStatus: number,
+	request?: string,
+): RouteAccess => ({
+	path,
+	method,
+	auth: "public",
+	expectedAnonymousStatus,
+	...(request === undefined ? {} : { request }),
+});
+
+// Anonymous writes carry an empty JSON object, so a public write answers its validation 400; the better-auth endpoints are public
+// by nature (sign-in/up, reset) and enforce sessions themselves where needed (change-password: 401 once a body is sent).
+export const ACCESS_MATRIX: readonly RouteAccess[] = [
+	publicRoute("GET", "/", 200),
+	publicRoute("GET", "/healthz", 200),
+	publicRoute("GET", "/readyz", 200),
+	publicRoute("GET", "/openapi.json", 200),
+	publicRoute("GET", "/api/v1/slug", 200, "/api/v1/slug?text=hello"),
+	publicRoute("GET", "/api/v1/events", 200),
+	publicRoute("POST", "/api/auth/sign-up/email", 400),
+	publicRoute("POST", "/api/auth/sign-in/email", 400),
+	publicRoute("POST", "/api/auth/sign-out", 200),
+	publicRoute("GET", "/api/auth/get-session", 200),
+	publicRoute("POST", "/api/auth/request-password-reset", 400),
+	publicRoute("POST", "/api/auth/reset-password", 400),
+	publicRoute("GET", "/api/auth/verify-email", 400),
+	publicRoute("POST", "/api/auth/send-verification-email", 400),
+	publicRoute("POST", "/api/auth/change-password", 400),
+	{
+		path: "/api/v1/me",
+		method: "GET",
+		auth: "authenticated",
+		expectedAnonymousStatus: 401,
+	},
+{%- if kind == 'web' %}
+	publicRoute("GET", "/api/v1/og", 200, "/api/v1/og?title=hello"),
+	publicRoute("POST", "/api/v1/vitals", 400),
+{%- endif %}
+{%- if payments != 'none' %}
+	publicRoute("POST", "/api/v1/webhooks/{{ payments }}", 503), // no webhook secret in the e2e environment
+{%- endif %}
+{%- if with_ai %}
+	{
+		path: "/api/v1/ai/summarize",
+		method: "POST",
+		auth: "authenticated",
+		expectedAnonymousStatus: 401,
+	},
+{%- endif %}
+];

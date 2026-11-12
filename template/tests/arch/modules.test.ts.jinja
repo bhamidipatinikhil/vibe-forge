@@ -1,0 +1,66 @@
+// tests/arch/modules.test.ts — the layer and module rules in .dependency-cruiser.cjs (ADRs 0001 and 0003) are path
+// regexes: a typo makes a rule silently never fire, and a new project has no module that would show it. This cruises
+// a fixture tree (tests/arch/__fixtures__/src: every forbidden edge once, next to the allowed ones) with the project's
+// own rules and expects exactly the forbidden edges.
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { cruise, type IForbiddenRuleType } from "dependency-cruiser";
+import { describe, expect, it } from "vitest";
+
+const CONFIG_URL = pathToFileURL(
+	join(process.cwd(), ".dependency-cruiser.cjs"),
+).href;
+const FIXTURE_ROOT = join(process.cwd(), "tests", "arch", "__fixtures__");
+
+function isRuleList(value: unknown): value is IForbiddenRuleType[] {
+	return Array.isArray(value);
+}
+
+/** The `forbidden` rules exported by .dependency-cruiser.cjs. */
+async function forbiddenRules(): Promise<IForbiddenRuleType[]> {
+	const module: unknown = await import(CONFIG_URL);
+	const config: unknown =
+		typeof module === "object" && module !== null && "default" in module
+			? module.default
+			: undefined;
+	const forbidden: unknown =
+		typeof config === "object" && config !== null && "forbidden" in config
+			? config.forbidden
+			: undefined;
+	if (!isRuleList(forbidden)) {
+		throw new Error(".dependency-cruiser.cjs exports no forbidden rules");
+	}
+	return forbidden;
+}
+
+describe(".dependency-cruiser.cjs", () => {
+	it("reports exactly the forbidden layer and module edges of the fixture", async () => {
+		const result = await cruise(["src"], {
+			baseDir: FIXTURE_ROOT,
+			validate: true,
+			ruleSet: { forbidden: await forbiddenRules() },
+			tsPreCompilationDeps: true,
+		});
+		if (typeof result.output === "string") {
+			throw new Error("expected a cruise result, got formatted output");
+		}
+		const errors = result.output.summary.violations
+			.filter((violation) => violation.rule.severity === "error")
+			.map(
+				(violation) =>
+					`${violation.rule.name}: ${violation.from} -> ${violation.to}`,
+			)
+			.toSorted();
+		expect(errors).toEqual([
+			"app-not-infra-or-ui: src/app/route.ts -> src/infra/db.ts",
+			"domain-independent: src/domain/leak.ts -> src/modules/b/index.ts",
+			"module-domain-pure: src/modules/b/domain.ts -> src/modules/b/store.ts",
+			"module-not-infra: src/modules/b/store.ts -> src/infra/db.ts",
+			"modules-via-index-from-outside: src/infra/peek.ts -> src/modules/a/internal.ts",
+			"no-cross-module-internals: src/modules/b/routes.ts -> src/modules/a/internal.ts",
+			"schemas-only-domain: src/schemas/leak.ts -> src/modules/b/index.ts",
+			"server-not-ui: src/infra/render.ts -> src/ui/leak.ts",{% if kind == 'web' %}
+			"ui-not-server: src/ui/leak.ts -> src/modules/b/index.ts",{% endif %}
+		]);
+	});
+});

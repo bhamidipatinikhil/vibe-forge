@@ -1,0 +1,42 @@
+{
+	"$schema": "https://unpkg.com/knip@6/schema.json",
+	"entry": [
+		"src/{index,instrumentation}.ts!",
+		"scripts/**/*.{ts,mjs}",
+		".claude/hooks/tests/**/*.test.ts"{% if kind == 'web' %},
+		"src/ui/{router,client}.tsx!",
+		"src/ui/server.ts!",
+		"src/ui/routes/**/*.tsx!",
+		"content-collections.ts"{% endif %}
+	],
+	"project": [
+		"src/**/*.{ts,tsx}!",
+		"!src/**/*.{test,spec}.{ts,tsx}!",
+		"scripts/**/*.{ts,mjs}"{% if kind == 'web' %},
+		"src/**/*.css!",
+		"content/**/*.mdx!"{% endif %}
+	],
+{%- if kind == 'web' %}
+	"ignoreDependencies": [
+		"@commitlint/cli",
+		"kysely-codegen",
+		"@lhci/cli",
+		"@inlang/plugin-message-format"
+	],
+{%- else %}
+	"ignoreDependencies": ["@commitlint/cli", "kysely-codegen"],
+{%- endif %}
+	"ignoreBinaries": ["pg_ctl"],
+	"ignoreExportsUsedInFile": true,
+	"treatConfigHintsAsErrors": true,
+	"rules": {
+		"files": "error",
+		"dependencies": "error",
+		"unlisted": "error",
+		"unresolved": "error",
+		"exports": "error",
+		"types": "error",
+		"duplicates": "error",
+		"enumMembers": "error"
+	}
+}

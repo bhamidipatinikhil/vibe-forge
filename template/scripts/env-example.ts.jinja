@@ -1,0 +1,52 @@
+// scripts/env-example.ts — renders .env.example from the environment schemas (`pnpm run env:example`); `just docs`
+// runs it with --check, so a key added to src/env.ts{% if kind == 'web' %} or src/ui/env.schema.ts{% endif %} without the file (or the reverse) fails the gate.
+import type { z } from "zod";
+import { serverSchema } from "../src/env.js";
+{%- if kind == 'web' %}
+import { clientSchema } from "../src/ui/env.schema.js";
+{%- endif %}
+import { invokedDirectly, writeOrCheck } from "./lib/write-or-check.js";
+
+const HEADER = `# .env.example — the documented key list, GENERATED from src/env.ts{% if kind == 'web' %} and src/ui/env.schema.ts{% endif %} (pnpm run env:example).
+# Validated at start-up (t3-env + Zod; empty values count as unset). Do not copy it to .env: run the app with the
+# values decrypted into the child process only, e.g.
+#   sops exec-env secrets/dev.enc.env 'pnpm dev'
+#   op run --env-file=.env.op -- pnpm dev
+# Set SKIP_ENV_VALIDATION=1 only for secret-less builds (e.g. docker build).
+`;
+
+function section(
+	title: string,
+	schema: Readonly<Record<string, z.ZodType>>,
+): string {
+	const entries = Object.entries(schema).map(([key, value]) => {
+		const meta = value.meta();
+		const description = meta?.description ?? key;
+		const example = meta?.["example"];
+		return `# ${description}\n${key}=${typeof example === "string" ? example : ""}\n`;
+	});
+	return `\n# --- ${title} ---\n\n${entries.join("\n")}`;
+}
+
+/** The full .env.example text. */
+export function renderEnvExample(): string {
+	return `${HEADER}${section("server (src/env.ts)", serverSchema)}{% if kind == 'web' %}${section("browser, baked into the client bundle at build time (src/ui/env.schema.ts)", clientSchema)}{% endif %}`;
+}
+
+/**
+ * CLI entry: `--check` verifies .env.example, otherwise it is (re)written.
+ * @param args - Command-line arguments.
+ * @returns The process exit code.
+ */
+export function main(args: readonly string[]): Promise<number> {
+	return writeOrCheck({
+		file: new URL("../.env.example", import.meta.url),
+		generated: renderEnvExample(),
+		check: args.includes("--check"),
+		regenerate: "pnpm run env:example",
+	});
+}
+
+if (invokedDirectly(import.meta.url)) {
+	process.exitCode = await main(process.argv.slice(2));
+}

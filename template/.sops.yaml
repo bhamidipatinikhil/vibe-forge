@@ -1,0 +1,7 @@
+# .sops.yaml — encryption rules for secrets/*.enc.env (sops + age, both in the Nix shell).
+# Replace the recipient with your age public key (`age-keygen -o ~/.config/sops/age/keys.txt` prints it) and add one
+# line per person or CI identity that must decrypt. Then: `sops secrets/dev.enc.env` edits, `sops exec-env
+# secrets/dev.enc.env 'pnpm dev'` runs with the values in the child process only.
+creation_rules:
+  - path_regex: ^secrets/.*\.enc\.env$
+    age: age1replacewithyourpublickeyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx

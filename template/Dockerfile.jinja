@@ -1,0 +1,32 @@
+# syntax=docker/dockerfile:1
+# Dockerfile — the production image that deploy.yml builds and attests (provenance, SBOM). Three stages: install
+# (frozen, the same supply-chain policy as everywhere: pnpm-workspace.yaml), build, and a slim runtime that runs as
+# the unprivileged `node` user. The base image is pinned by digest; Renovate bumps it. Migrations are not run here:
+# deploy.yml applies them (dbmate) before the new image takes traffic.
+ARG NODE_IMAGE=node:{{ node_major }}-trixie-slim@sha256:{% if node_major == 26 %}e4db4c914bf8ad241bd24804fc25d272d89bad97e68cdc8a1414862790a02c39{% else %}54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446{% endif %}
+
+FROM ${NODE_IMAGE} AS deps
+WORKDIR /app
+# Node 26 ships no corepack; pnpm must equal package.json "packageManager" (just doctor checks the Nix shell's).
+RUN npm install --global --ignore-scripts pnpm@11.27.0
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+
+FROM deps AS build
+COPY . .
+# The build imports src/env.ts (OpenAPI, env schemas) but has no secrets: validation is skipped for this stage only.
+ENV SKIP_ENV_VALIDATION=1
+RUN pnpm build && pnpm prune --prod --ignore-scripts
+
+FROM ${NODE_IMAGE} AS runtime
+WORKDIR /app
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000
+COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/flags ./flags
+USER node
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:3000/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+CMD ["node", "--import", "./dist/node/instrumentation.js", "dist/node/index.js"]

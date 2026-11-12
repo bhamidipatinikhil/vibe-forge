@@ -1,0 +1,15 @@
+{
+	"$schema": "https://flagd.dev/schema/v0/flags.json",
+	"flags": {
+		"kill-switch-writes": {
+			"state": "ENABLED",
+			"variants": { "on": true, "off": false },
+			"defaultVariant": "off"
+		},
+		"events-stream": {
+			"state": "ENABLED",
+			"variants": { "on": true, "off": false },
+			"defaultVariant": "on"
+		}
+	}
+}

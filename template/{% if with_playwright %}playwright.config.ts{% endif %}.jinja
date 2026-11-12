@@ -1,0 +1,50 @@
+// playwright.config.ts — Playwright owns tests/e2e, tests/security and
+// tests/smoke; Vitest owns src/**/*.test.ts and tests/unit. Chromium only: the
+// browser comes from the Nix shell (PLAYWRIGHT_BROWSERS_PATH), so
+// @playwright/test must equal $PLAYWRIGHT_VERSION (`just doctor` checks).
+import { defineConfig, devices } from "@playwright/test";
+
+// deploy.yml sets BASE_URL to the fresh deployment and runs tests/smoke against
+// it; without BASE_URL the webServer below starts the production build
+// (`just e2e` builds first) on 127.0.0.1:3000 against a throwaway, migrated
+// Postgres (scripts/with-pg.ts).
+// (Destructured: process.env is an index signature, and tsconfig's
+// noPropertyAccessFromIndexSignature rules out `process.env.BASE_URL`.)
+const { BASE_URL: externalBaseUrl, CI } = process.env;
+
+export default defineConfig({
+	testDir: "tests",
+	testMatch: [
+		"e2e/**/*.spec.ts",
+		"security/**/*.spec.ts",
+		"smoke/**/*.spec.ts",
+	],
+	fullyParallel: true,
+	forbidOnly: CI !== undefined,
+	retries: 0,
+	reporter: [
+		["list"],
+		["html", { outputFolder: "reports/playwright", open: "never" }],
+	],
+	outputDir: "reports/test-results",
+	use: {
+		baseURL: externalBaseUrl ?? "http://127.0.0.1:3000",
+		trace: "retain-on-failure",
+	},
+	projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+	...(externalBaseUrl === undefined
+		? {
+				webServer: {
+					command:
+						"node --import tsx scripts/with-pg.ts -- node --import ./dist/node/instrumentation.js dist/node/index.js",
+					url: "http://127.0.0.1:3000/readyz",
+					reuseExistingServer: CI === undefined,
+					env: { PORT: "3000", NODE_ENV: "test", LOG_LEVEL: "warn" },
+					timeout: 60_000,
+					// The default is SIGKILL, which skips with-pg's cleanup and leaves its Postgres running. SIGTERM lets
+					// the app drain and with-pg stop the cluster; the timeout outlasts the app's 10 s shutdown deadline.
+					gracefulShutdown: { signal: "SIGTERM", timeout: 15_000 },
+				},
+			}
+		: {}),
+});

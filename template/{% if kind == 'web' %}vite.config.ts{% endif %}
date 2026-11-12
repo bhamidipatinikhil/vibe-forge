@@ -1,0 +1,30 @@
+// vite.config.ts — the web build: TanStack Start (SSR, routes in src/ui/routes) with React, Tailwind v4, Paraglide
+// messages, content-collections (frontmatter) and MDX (post bodies, compiled at build time: no eval in the browser,
+// so the CSP needs no 'unsafe-eval'). `vite build` writes dist/client and dist/server/server.js; Hono serves both
+// (src/infra/web.ts). In dev, scripts/dev.ts runs this config in middleware mode behind the same Hono app.
+import contentCollections from "@content-collections/vite";
+import { paraglideVitePlugin } from "@inlang/paraglide-js";
+import mdx from "@mdx-js/rollup";
+import tailwindcss from "@tailwindcss/vite";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import viteReact from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+	resolve: { tsconfigPaths: true },
+	plugins: [
+		paraglideVitePlugin({
+			project: "./project.inlang",
+			outdir: "./src/ui/paraglide",
+			strategy: ["cookie", "preferredLanguage", "baseLocale"],
+		}),
+		contentCollections(),
+		{ enforce: "pre", ...mdx() },
+		tailwindcss(),
+		tanstackStart({ srcDirectory: "src/ui" }),
+		viteReact({ include: /\.(mdx|[jt]sx?)$/ }),
+	],
+	// No source maps in dist/client: Hono serves that directory publicly. To symbolicate browser errors, enable
+	// sourcemap: "hidden" and upload the maps to Sentry in CI, then delete them before the image is built.
+	build: { sourcemap: false },
+});

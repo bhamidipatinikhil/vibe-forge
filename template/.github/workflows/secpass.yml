@@ -1,0 +1,106 @@
+# .github/workflows/secpass.yml
+# One job = one "security test oracle"; secpass@1 = every job green on the first CI run of a change.
+# The app under test is the committed code, built and served on 127.0.0.1:3000 from the Nix dev shell, in production mode on a
+# throwaway, migrated Postgres (scripts/with-pg.ts).
+name: secpass
+on:
+  pull_request:
+  merge_group:
+  schedule: [{ cron: "0 3 * * *" }]   # nightly
+permissions: {}
+jobs:
+  authz-e2e:                       # SECPASS, SEC-VULN (OWASP A01 / ASVS V8): Playwright role matrix + IDOR tests
+    runs-on: ubuntu-latest
+    permissions: { contents: read, id-token: write }   # id-token for FlakeHub Cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: DeterminateSystems/determinate-nix-action@92957199488000b908fdad19f63711000965d8f3 # v3.24.1
+      - uses: DeterminateSystems/flakehub-cache-action@3ac6f3c19fc52eeb1408fd434bd1b4ed4266bf25 # v3.24.1
+      - run: nix develop .#quiet -c pnpm install --frozen-lockfile
+      # Workflows are copied verbatim for every Copier answer set; with_playwright=false renders neither @playwright/test nor
+      # tests/security, so the Playwright step is guarded at step level (the job stays green, so it can stay a required check).
+      - run: nix develop .#quiet -c bash -c 'pnpm build && pnpm exec playwright test tests/security'   # playwright.config.ts serves the build on a throwaway Postgres
+        if: hashFiles('tests/security/**/*.spec.ts') != ''
+        env: { CI: "1" }
+      - if: hashFiles('tests/security/**/*.spec.ts') == ''
+        run: echo "::notice::no tests/security/**/*.spec.ts (generated with with_playwright=false); authz-e2e has nothing to run"
+
+  api-fuzz:                        # SECPASS (ASVS V2/V4), ERRHANDLING (OWASP A10): property-based fuzzing of openapi.json
+    runs-on: ubuntu-latest
+    permissions: { contents: read, id-token: write, pull-requests: write }   # pull-requests: write for the schema-coverage PR comment
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: DeterminateSystems/determinate-nix-action@92957199488000b908fdad19f63711000965d8f3 # v3.24.1
+      - uses: DeterminateSystems/flakehub-cache-action@3ac6f3c19fc52eeb1408fd434bd1b4ed4266bf25 # v3.24.1
+      - run: nix develop .#quiet -c pnpm install --frozen-lockfile
+      - name: Build and start the app in the background (production mode, throwaway migrated Postgres)
+        run: |
+          nix develop .#quiet -c pnpm build
+          BETTER_AUTH_SECRET="$(openssl rand -base64 32)"; export BETTER_AUTH_SECRET   # per run; never a real secret
+          (nix develop .#quiet -c pnpm exec tsx scripts/with-pg.ts -- pnpm start >"$RUNNER_TEMP/app.log" 2>&1 &)
+          for _ in $(seq 1 60); do curl -fsS http://127.0.0.1:3000/readyz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:3000/readyz
+        # MAILPIT_URL satisfies the production mailer check; nothing listens there, so queued mail just retries.
+        env: { NODE_ENV: production, PORT: "3000", LOG_LEVEL: warn, MAILPIT_URL: "http://127.0.0.1:8025" }
+      - uses: schemathesis/action@b0cacf86f25caaa79ac110cc2077afd70fdd67ff # v3.1.0
+        with:
+          schema: 'http://127.0.0.1:3000/openapi.json'
+          base-url: 'http://127.0.0.1:3000/'
+          checks: 'not_a_server_error'     # start strict-but-quiet; widen to all checks once stable
+          max-examples: 50
+          wait-for-schema: '30'
+          args: '--report=junit'
+          # authorization: 'Bearer ${{ secrets.TEST_API_TOKEN }}'   # add once routes require a token
+
+  zap-baseline:                    # SECPASS (passive checks: headers, cookies, CSP, leaks)
+    runs-on: ubuntu-latest
+    permissions: { contents: read, id-token: write }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: DeterminateSystems/determinate-nix-action@92957199488000b908fdad19f63711000965d8f3 # v3.24.1
+      - uses: DeterminateSystems/flakehub-cache-action@3ac6f3c19fc52eeb1408fd434bd1b4ed4266bf25 # v3.24.1
+      - run: nix develop .#quiet -c pnpm install --frozen-lockfile
+      - name: Build and start the app in the background (production mode, throwaway migrated Postgres)
+        run: |
+          nix develop .#quiet -c pnpm build
+          BETTER_AUTH_SECRET="$(openssl rand -base64 32)"; export BETTER_AUTH_SECRET   # per run; never a real secret
+          (nix develop .#quiet -c pnpm exec tsx scripts/with-pg.ts -- pnpm start >"$RUNNER_TEMP/app.log" 2>&1 &)
+          for _ in $(seq 1 60); do curl -fsS http://127.0.0.1:3000/readyz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:3000/readyz
+        # MAILPIT_URL satisfies the production mailer check; nothing listens there, so queued mail just retries.
+        env: { NODE_ENV: production, PORT: "3000", LOG_LEVEL: warn, MAILPIT_URL: "http://127.0.0.1:8025" }
+      - uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        with:
+          target: 'http://127.0.0.1:3000'      # the action runs ZAP with --network=host, so 127.0.0.1 is the runner
+          docker_name: 'ghcr.io/zaproxy/zaproxy:stable'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a'
+          fail_action: true
+          allow_issue_writing: false
+
+  nuclei-nightly:                  # SECPASS (known misconfig/CVE templates)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions: { contents: read, id-token: write }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: DeterminateSystems/determinate-nix-action@92957199488000b908fdad19f63711000965d8f3 # v3.24.1
+      - uses: DeterminateSystems/flakehub-cache-action@3ac6f3c19fc52eeb1408fd434bd1b4ed4266bf25 # v3.24.1
+      - run: nix develop .#quiet -c pnpm install --frozen-lockfile
+      - name: Build and start the app in the background (production mode, throwaway migrated Postgres)
+        run: |
+          nix develop .#quiet -c pnpm build
+          BETTER_AUTH_SECRET="$(openssl rand -base64 32)"; export BETTER_AUTH_SECRET   # per run; never a real secret
+          (nix develop .#quiet -c pnpm exec tsx scripts/with-pg.ts -- pnpm start >"$RUNNER_TEMP/app.log" 2>&1 &)
+          for _ in $(seq 1 60); do curl -fsS http://127.0.0.1:3000/readyz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:3000/readyz
+        # MAILPIT_URL satisfies the production mailer check; nothing listens there, so queued mail just retries.
+        env: { NODE_ENV: production, PORT: "3000", LOG_LEVEL: warn, MAILPIT_URL: "http://127.0.0.1:8025" }
+      - uses: projectdiscovery/nuclei-action@cc153d0541e1adf8a42bbe31c0a4fb2376147538 # v3.1.1
+        with:
+          version: v3.11.1
+          args: -u http://127.0.0.1:3000 -severity medium,high,critical

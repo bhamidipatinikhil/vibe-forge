@@ -1,0 +1,23 @@
+# .github/workflows/migrations.yml
+# Lint every changed Postgres migration with squawk (expand/contract safety: no ACCESS EXCLUSIVE locks, no NOT NULL without
+# a default, concurrent index creation, ...). Runs only on PRs that touch migrations/**; `just squawk` (part of just lint) and the
+# lefthook pre-commit job run the same check locally.
+name: migrations
+on:
+  pull_request:
+    paths: ["migrations/**"]
+permissions: {}
+jobs:
+  squawk:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: DeterminateSystems/determinate-nix-action@92957199488000b908fdad19f63711000965d8f3 # v3.24.1
+      - name: Lint changed Postgres migrations
+        run: |
+          mapfile -t files < <(git diff --name-only --diff-filter=ACMR "origin/${GITHUB_BASE_REF}...HEAD" -- 'migrations/*.sql')
+          if [ "${#files[@]}" -eq 0 ]; then echo "no changed migrations/*.sql files"; exit 0; fi
+          printf 'linting: %s\n' "${files[@]}"
+          nix develop .#quiet -c squawk "${files[@]}"   # the shell's squawk; .squawk.toml sets pg 18 (the same config as just squawk and lefthook)

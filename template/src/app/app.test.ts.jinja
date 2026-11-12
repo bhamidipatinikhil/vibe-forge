@@ -1,0 +1,246 @@
+{% if kind == 'service' %}import { html } from "hono/html";
+{% endif %}import { HTTPException } from "hono/http-exception";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import { logger } from "../logger.js";
+import { ErrorResponseSchema } from "../schemas/error.js";
+import { createApp } from "./app.js";
+import { openApiConfig } from "./openapi.js";
+import type { App, ErrorReporter } from "./ports.js";
+
+const OpenApiDocumentSchema = z.object({
+	openapi: z.literal("3.1.0"),
+	info: z.object({ title: z.string(), version: z.string() }),
+	paths: z.record(z.string(), z.unknown()),
+});
+
+const RequestLogSchema = z.object({
+	method: z.string(),
+	path: z.string(),
+	status: z.number(),
+	durationMs: z.number(),
+});
+
+vi.hoisted(() => {
+	vi.stubEnv("LOG_LEVEL", "silent");
+});
+
+const info = vi.spyOn(logger, "info");
+const warn = vi.spyOn(logger, "warn");
+const error = vi.spyOn(logger, "error");
+// `expect.any()` is typed `any`; naming it `unknown` keeps the matchers lint-clean.
+const anError: unknown = expect.any(Error);
+
+// Built per test (not once per file) so that mutation testing attributes the
+// route registration in createApp() to every test that exercises a route.
+let app: App;
+
+beforeEach(() => {
+	vi.clearAllMocks();
+	app = createApp();
+});
+
+afterAll(() => {
+	vi.restoreAllMocks();
+	vi.unstubAllEnvs();
+});
+
+async function get(path: string): Promise<{ status: number; body: unknown }> {
+	const response = await app.request(path);
+	return { status: response.status, body: await response.json() };
+}
+{%- if kind == 'service' %}
+
+describe("GET /", () => {
+	it("serves the HTML status page with the title, the heading and the three links", async () => {
+		const response = await app.request("/");
+		const page = await response.text();
+		// Escaped the way hono/html escapes the interpolation.
+		const title = await html`${openApiConfig.info.title}`;
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-type")).toContain("text/html");
+		expect(page).toContain("<!doctype html>");
+		expect(page).toContain('<html lang="en">');
+		expect(page).toContain(`<title>${title}</title>`);
+		expect(page).toContain(`<h1>${title}</h1>`);
+		expect(page).toContain("<p>The service is running.</p>");
+		expect(page).toContain(
+			'<li><a href="/openapi.json">OpenAPI document</a></li>',
+		);
+		expect(page).toContain('<li><a href="/healthz">Liveness probe</a></li>');
+		expect(page).toContain('<li><a href="/readyz">Readiness probe</a></li>');
+	});
+
+	it("nonces its inline style with the nonce the CSP allows", async () => {
+		const response = await app.request("/");
+		const nonce = /'nonce-([^']+)'/.exec(
+			response.headers.get("content-security-policy") ?? "",
+		)?.[1];
+		expect(nonce).toBeDefined();
+		expect(await response.text()).toContain(`<style nonce="${nonce ?? ""}">`);
+	});
+});
+{%- else %}
+
+describe("the web app fallback", () => {
+	it("answers non-API paths with a JSON 404 when no web handler is wired", async () => {
+		expect((await get("/")).status).toBe(404);
+	});
+
+	it("hands non-API paths to the web handler, but never API misses or Start server functions", async () => {
+		const web = createApp({
+			web: (c) => Promise.resolve(c.text("page", 200)),
+		});
+		expect(await (await web.request("/sign-in")).text()).toBe("page");
+		const apiMiss = await web.request("/api/v1/nope");
+		expect(apiMiss.status).toBe(404);
+		expect(await apiMiss.json()).toEqual({
+			error: { code: "not_found", message: "No route for GET /api/v1/nope" },
+		});
+		const serverFn = await web.request("/_serverFn/abc", { method: "POST" });
+		expect(serverFn.status).toBe(404);
+	});
+});
+{%- endif %}
+
+describe("GET /healthz", () => {
+	it("reports liveness", async () => {
+		expect(await get("/healthz")).toEqual({
+			status: 200,
+			body: { status: "ok" },
+		});
+	});
+
+	it("logs the completed request with its duration", async () => {
+		const before = performance.now();
+		await get("/healthz");
+		const elapsedMs = Math.ceil(performance.now() - before);
+		const completed = info.mock.calls.filter((call) =>
+			call.includes("request completed"),
+		);
+		expect(completed).toHaveLength(1);
+		const entry = RequestLogSchema.parse(completed[0]?.[0]);
+		expect(entry).toMatchObject({
+			method: "GET",
+			path: "/healthz",
+			status: 200,
+		});
+		expect(entry.durationMs).toBeGreaterThanOrEqual(0);
+		expect(entry.durationMs).toBeLessThanOrEqual(elapsedMs);
+	});
+});
+
+describe("GET /readyz", () => {
+	it("is ready when there are no checks", async () => {
+		expect(await get("/readyz")).toEqual({
+			status: 200,
+			body: { status: "ready", checks: {} },
+		});
+	});
+
+	it("is 503 when a check fails or throws, and logs the throw", async () => {
+		const guarded = createApp({
+			readinessChecks: [
+				{ name: "cache", run: () => Promise.resolve(true) },
+				{ name: "db", run: () => Promise.resolve(false) },
+				{ name: "flaky", run: () => Promise.reject(new Error("boom")) },
+			],
+		});
+		const response = await guarded.request("/readyz");
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({
+			status: "not-ready",
+			checks: { cache: "ok", db: "fail", flaky: "fail" },
+		});
+		expect(warn).toHaveBeenCalledTimes(1);
+		expect(warn).toHaveBeenCalledWith(
+			{ err: anError, check: "flaky" },
+			"readiness check threw",
+		);
+	});
+});
+
+describe("GET /openapi.json", () => {
+	it("describes every API route in OpenAPI 3.1", async () => {
+		const { status, body } = await get("/openapi.json");
+		expect(status).toBe(200);
+		const document = OpenApiDocumentSchema.parse(body);
+		expect(document.info.title).toBe(openApiConfig.info.title);
+		expect(Object.keys(document.paths)).toEqual(
+			expect.arrayContaining([
+				"/api/v1/slug",
+				"/api/v1/me",
+				"/api/v1/events",
+				"/api/auth/sign-in/email",
+				"/healthz",
+				"/readyz",
+			]),
+		);
+	});
+});
+
+describe("GET /api/v1/slug", () => {
+	it("returns the slug for valid text", async () => {
+		expect(await get("/api/v1/slug?text=Hello,%20World!")).toEqual({
+			status: 200,
+			body: { slug: "hello-world" },
+		});
+	});
+
+	it("rejects a missing or empty text parameter with 400", async () => {
+		const missing = await get("/api/v1/slug");
+		expect(missing.status).toBe(400);
+		const { error: validation } = ErrorResponseSchema.parse(missing.body);
+		expect(validation.code).toBe("validation");
+		expect(validation.message).toMatch(/^text: /);
+		const empty = await get("/api/v1/slug?text=");
+		expect(empty.status).toBe(400);
+	});
+
+	it("rejects text without letters or digits with 400", async () => {
+		expect(await get("/api/v1/slug?text=!!!")).toEqual({
+			status: 400,
+			body: {
+				error: { code: "empty", message: "text contains no letters or digits" },
+			},
+		});
+	});
+});
+
+describe("error handling", () => {
+	it("answers unknown routes and methods with a JSON 404", async () => {
+		expect(await get("/nope")).toEqual({
+			status: 404,
+			body: { error: { code: "not_found", message: "No route for GET /nope" } },
+		});
+		const wrongMethod = await app.request("/healthz", { method: "POST" });
+		expect(wrongMethod.status).toBe(404);
+	});
+
+	it("maps unexpected errors to a logged, reported JSON 500 and keeps HTTPException statuses", async () => {
+		const reported: unknown[] = [];
+		const errors: ErrorReporter = {
+			capture: (e) => {
+				reported.push(e);
+			},
+		};
+		const failing = createApp({ errors });
+		failing.get("/boom", () => {
+			throw new Error("boom");
+		});
+		failing.get("/teapot", () => {
+			throw new HTTPException(418, { message: "short and stout" });
+		});
+		const teapot = await failing.request("/teapot");
+		expect(teapot.status).toBe(418);
+		expect(error).not.toHaveBeenCalled();
+		const boom = await failing.request("/boom");
+		expect(boom.status).toBe(500);
+		expect(await boom.json()).toEqual({
+			error: { code: "internal", message: "Internal Server Error" },
+		});
+		expect(error).toHaveBeenCalledTimes(1);
+		expect(error).toHaveBeenCalledWith({ err: anError }, "unhandled error");
+		expect(reported).toEqual([anError]);
+	});
+});

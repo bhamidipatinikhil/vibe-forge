@@ -1,0 +1,6 @@
+@AGENTS.md
+
+## Claude Code
+- Use plan mode for anything under `src/domain/` or `migrations/`; plans live in `plans/` and survive compaction.
+- Before saying a task is done: run `just check`; then ask the `reviewer` subagent to compare the diff against the plan/spec (paste the `git diff` output or the plan path into the request: the reviewer is read-only, Read/Grep/Glob and no Bash).
+- Prefer `Grep`/LSP over reading whole files; never read `dist/`, `build/` or generated files.

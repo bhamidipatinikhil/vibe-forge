@@ -1,0 +1,19 @@
+# Build context of the Dockerfile: sources only. Secrets, local state and build output never enter an image layer.
+.git
+node_modules
+dist
+reports
+coverage
+.stryker-tmp
+.data
+.direnv
+.tanstack
+.content-collections
+src/ui/routeTree.gen.ts
+src/ui/paraglide
+.env
+.env.*
+!.env.example
+secrets
+.claude/settings.local.json
+.claude/worktrees

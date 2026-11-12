@@ -1,0 +1,130 @@
+---
+status: accepted
+date: 2026-11-03
+---
+
+# 0002 — The stack, and what it leaves out on purpose
+
+## Context and problem statement
+
+An agent writes most of the code in this project. Every tool below either makes a mistake impossible (types,
+schemas, boundaries), makes it loud (gates, scanners, tests against real services), or keeps the blast radius
+small (flags, expand-only migrations, immutable images). Choices are pinned to exact versions and changed through
+Renovate PRs. This record lists the choices, the deliberate holds, and the tools that are **not** used, so that an
+agent (or a person) does not quietly add them.
+
+## Decision
+
+**Environment and agent.** Nix flake + nix-direnv (Node {{ node_major }}, pnpm 11, just, lefthook), Copier for template
+updates, Claude Code pinned in the flake with its bubblewrap/socat sandbox, git, gh, jq, ripgrep, fd. The shell also
+carries Postgres 18 (local and test database), dbmate (migrations), Squawk (migration lint), oasdiff (breaking API
+changes; from the nixos-unstable input until nixos-26.05 has it), sops + age (secrets), Mailpit (local mail) and k6
+(load tests).
+
+**Server.** TypeScript (strict), Hono on `@hono/node-server` with `@hono/zod-openapi` and Zod 4, neverthrow, Pino,
+OpenTelemetry, t3-env, ts-reset, tsx. Hono's built-in middleware hardens every response: secure-headers (a CSP with
+a per-request nonce), body-limit and csrf on `/api/*`; `streamSSE` serves live updates (`/api/v1/events`).
+
+**Data and backend.** Postgres through Kysely + `pg`, with types generated from the real schema (kysely-codegen,
+checked by `just check`). better-auth for accounts and sessions (pinned exactly; every endpoint it exposes is in
+`openapi.json`, the rest are disabled). pg-boss for jobs and cron. Resend for email, with React Email templates
+(`react-email` + `@react-email/render`; the old `@react-email/components` package is deprecated) and Mailpit
+locally. OpenFeature with the flagd provider in in-process mode, flags in `flags/flags.json`. Sentry (`@sentry/node`
+11) for errors only: traces stay on OpenTelemetry, so nothing is instrumented twice.
+
+{% if kind == 'web' -%}
+**Frontend.** React 19 with TanStack Start (and Router), Vite 8 + `@vitejs/plugin-react`, served by the same Hono
+process (one port, one image; `src/infra/web.ts`, `scripts/dev.ts`). Tailwind CSS v4, shadcn/ui components copied
+into `src/ui/components/ui` on Base UI, react-aria-components only for hard widgets (the language picker). TanStack
+Query and TanStack Form, lucide-react icons, self-hosted fonts (`@fontsource`), Paraglide for translations (its
+message-format plugin installed from npm, not a CDN), content-collections + MDX compiled at build time (no runtime
+`eval`, so the CSP needs no `unsafe-eval`), schema-dts for JSON-LD, satori + resvg for Open Graph images
+(`/api/v1/og`; satori draws SVG, resvg turns it into the PNG that social sites require), web-vitals reported to
+the server as OpenTelemetry metrics, and `@sentry/react`.
+
+{% endif -%}
+**Quality gates.** Biome; ESLint with typescript-eslint, regexp, Vitest{% if kind == 'web' %}, jsx-a11y (6.10.2, run on ESLint 10 through
+`@eslint/compat`; `tests/lint/jsx-a11y.test.ts` proves the rules still fire) and react-hooks{% else %}, jsx-a11y and react-hooks (for the email
+templates){% endif %}; ast-grep rules
+(including the ban on TanStack Start server functions and server routes: every endpoint stays visible to OpenAPI,
+the access matrix and Schemathesis). Vitest with coverage{% if kind == 'web' %} and browser mode for components{% endif %}, fast-check, MSW, Stryker; knip,
+jscpd, dependency-cruiser, Playwright + axe{% if kind == 'web' %}, size-limit and Lighthouse CI{% endif %}; commitlint; shellcheck and tests for the
+Claude hooks; `--check` generators for `openapi.json`, `.env.example`, `db/schema.sql` and the database types.
+
+**Security and supply chain.** Semgrep, CodeQL, gitleaks, TruffleHog; OSV-Scanner, Grype + cdxgen (SBOM), Socket
+Firewall, `npm audit signatures`, dependency-review, Renovate; zizmor and harden-runner; Schemathesis, ZAP baseline,
+nuclei; the guard and verify-install hooks and the security-guidance plugin.
+
+**CI/CD.** GitHub Actions with Determinate Nix and FlakeHub Cache; a Dockerfile built with buildx, pushed to GHCR
+with provenance, SBOM and build attestations; migrations applied before the new image takes traffic; Copier's weekly
+template-update PR.
+
+### Optional integrations in this project
+
+{% if payments == 'razorpay' -%}
+- Payments: Razorpay (SDK + signature-verified webhook, `/api/v1/webhooks/razorpay`).
+{% elif payments == 'polar' -%}
+- Payments: Polar (SDK 1.x, API version 2026-10; Standard Webhooks verification, `/api/v1/webhooks/polar`).
+{% else -%}
+- Payments: none yet. The template offers Razorpay or Polar.
+{% endif -%}
+{% if with_ai -%}
+- AI: `@anthropic-ai/sdk` with server-side refusal fallbacks (`/api/v1/ai/summarize`, signed-in users only).
+{% else -%}
+- AI: none yet. The template offers `@anthropic-ai/sdk`.
+{% endif -%}
+{% if kind == 'web' -%}
+{% if with_charts -%}
+- Charts: lightweight-charts (time series; keep TradingView's attribution link) and recharts (dashboards).
+{% endif -%}
+{% if with_rich_text -%}
+- Rich text: Tiptap (store the JSON document, never user HTML).
+{% endif -%}
+{% endif %}
+### Held back, on purpose
+
+- TypeScript stays at 6.0.3: TypeScript 7 is out, but typescript-eslint and dependency-cruiser do not support it yet.
+- pnpm stays at 11: pnpm 12 is too new to trust with this project's supply-chain settings.
+
+### Not using, on purpose
+
+The install hook (`.claude/hooks/verify-install.sh`) denies these packages and dependency-cruiser forbids importing
+them. Changing that is a human decision: write a new ADR, then install by hand.
+
+| Not using | Why | Use instead |
+| --- | --- | --- |
+| Next.js App Router / RSC | Repeated critical security advisories | TanStack Start |
+| Prisma | An unpinned install now pulls a release candidate that breaks projects | Kysely |
+| Drizzle | Waiting for 1.0 | Kysely |
+| Redis/Valkey, Meilisearch | Postgres covers caching, queues and search for now | Postgres, pg-boss, full-text search |
+| Storybook | Only needed for a documented design system | Vitest browser mode |
+| Turborepo/Nx | Only needed in a monorepo | just |
+| Inngest/Trigger.dev | pg-boss covers jobs and cron | pg-boss |
+| Unleash | Now AGPL | OpenFeature + flagd |
+| Clerk | Passkeys are not on its free plan | better-auth |
+
+### Patterns not used, on purpose
+
+Generic architecture prompts often ask for these. Each one weakens a gate this project relies on.
+
+| Pattern | Why not | Use instead |
+| --- | --- | --- |
+| An in-process event bus or pub/sub between features | dependency-cruiser, the types and grep cannot see who handles an event, and an event in memory is lost on a crash | Direct calls through a module's `index.ts` (ADR 0003); pg-boss jobs for side effects that must survive a restart |
+| Fallback defaults for missing required configuration | A missing secret or database URL must stop the boot; a default auth secret in production lets anyone sign sessions | `src/env.ts` validates at boot: secrets and the database URL are required in production, and only safe values (port, log level) have defaults |
+| An adapter around every SDK | A wrapper with a single implementation adds indirection and hides the SDK's own types; providers are rarely swapped | One port per capability the app needs, declared where the app uses it (`src/app/ports.ts`, or next to the route that needs it) and implemented in `src/infra`; tests pass small real fakes |
+| One `/config` folder for every constant | Every feature then depends on one hub, and deployment settings get mixed with code constants | `src/env.ts` for what differs per deployment, `flags/flags.json` for runtime switches{% if kind == 'web' %}, the Tailwind `@theme` tokens for design{% endif %}, constants next to the code that owns them |
+
+### Reviewed exceptions
+
+- Licence: `sentry` (the Sentry CLI that `@sentry/node` 11 ships for source-map upload) is FSL-1.1-Apache-2.0, which
+  becomes Apache-2.0 two years after each release. It is the only package allowed outside the SPDX allowlist
+  (`justfile` `licenses`, `supply-chain.yml`).
+- Supply-chain policy: `semver`'s legacy 5.x/6.x releases are excluded from `trustPolicy: no-downgrade` by exact
+  version (published after 7.x gained provenance); a security release younger than the 3-day `minimumReleaseAge` is
+  excluded by exact version with a removal date (`pnpm-workspace.yaml`).
+
+## Consequences
+
+- One process and one image to run; the database is the only stateful dependency.
+- New capabilities start from this list. When something here is replaced, this ADR is superseded by a new one in the
+  same change.

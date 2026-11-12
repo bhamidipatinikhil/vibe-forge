@@ -1,0 +1,49 @@
+import { html } from "hono/html";
+import { openApiConfig } from "../openapi.js";
+import type { App } from "../ports.js";
+
+/**
+ * Registers `GET /`: a minimal HTML status page that links to the OpenAPI
+ * document and the probes. Interpolations are escaped by `hono/html`. The
+ * page is the reference for the accessibility rule (WCAG 2.2 AA, checked
+ * with axe in the e2e suite): every link keeps a pointer target of at least
+ * 24 by 24 CSS pixels with space to the next one (SC 2.5.8, target size).
+ * The `<style>` block carries the request's CSP nonce (src/app/security.ts).
+ * @param app - The application to register the route on.
+ */
+export function registerRootRoute(app: App): void {
+	app.get("/", (c) =>
+		c.html(html`<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>${openApiConfig.info.title}</title>
+		<style nonce="${c.get("secureHeadersNonce") ?? ""}">
+			/* WCAG 2.2 SC 2.5.8: pointer targets of at least 24 by 24 CSS px. */
+			li {
+				margin: 0.5rem 0;
+			}
+			a {
+				display: inline-block;
+				min-width: 24px;
+				min-height: 24px;
+				line-height: 24px;
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<h1>${openApiConfig.info.title}</h1>
+			<p>The service is running.</p>
+			<ul>
+				<li><a href="/openapi.json">OpenAPI document</a></li>
+				<li><a href="/healthz">Liveness probe</a></li>
+				<li><a href="/readyz">Readiness probe</a></li>
+			</ul>
+		</main>
+	</body>
+</html>
+`),
+	);
+}

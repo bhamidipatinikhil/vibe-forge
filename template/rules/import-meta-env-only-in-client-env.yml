@@ -1,0 +1,23 @@
+id: import-meta-env-only-in-client-env
+language: Tsx
+severity: error
+message: 'Read browser configuration from `clientEnv` (src/ui/public-env.ts), not from import.meta.env.'
+note: 'src/ui/public-env.ts validates every VITE_ variable once (t3-env + Zod, schema in src/ui/env.schema.ts) and .env.example is generated from that schema.'
+files:
+  - src/**
+ignores:
+  - src/ui/public-env.ts
+rule:
+  pattern: import.meta.env
+---
+id: import-meta-env-only-in-client-env-ts
+language: TypeScript
+severity: error
+message: 'Read browser configuration from `clientEnv` (src/ui/public-env.ts), not from import.meta.env.'
+note: 'src/ui/public-env.ts validates every VITE_ variable once (t3-env + Zod, schema in src/ui/env.schema.ts) and .env.example is generated from that schema.'
+files:
+  - src/**
+ignores:
+  - src/ui/public-env.ts
+rule:
+  pattern: import.meta.env

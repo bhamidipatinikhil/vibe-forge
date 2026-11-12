@@ -1,0 +1,19 @@
+id: no-console-outside-logger
+language: TypeScript
+severity: error
+message: 'Use the structured logger from src/logger.ts instead of console.*.'
+note: 'Pino output is JSON, redacted and trace-correlated; console output is none of those.'
+ignores:
+  - src/logger.ts
+rule:
+  pattern: console.$METHOD($$$ARGS)
+---
+id: no-console-outside-logger-tsx
+language: Tsx
+severity: error
+message: 'Use the structured logger from src/logger.ts instead of console.*.'
+note: 'Pino output is JSON, redacted and trace-correlated; console output is none of those.'
+ignores:
+  - src/logger.ts
+rule:
+  pattern: console.$METHOD($$$ARGS)

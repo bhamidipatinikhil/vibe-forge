@@ -1,0 +1,66 @@
+import { HttpResponse, http } from "msw";
+import { describe, expect, it } from "vitest";
+import { server } from "../../tests/setup.msw.js";
+import { claudeSummarizer } from "./ai.js";
+
+const MESSAGES = "https://api.anthropic.com/v1/messages";
+
+function message(stopReason: string, text: string): Record<string, unknown> {
+	return {
+		id: "msg_1",
+		type: "message",
+		role: "assistant",
+		model: "claude-opus-5-5",
+		content: [{ type: "text", text }],
+		stop_reason: stopReason,
+		stop_sequence: null,
+		usage: { input_tokens: 10, output_tokens: 5 },
+	};
+}
+
+describe("claudeSummarizer", () => {
+	it("is off without an API key", () => {
+		expect(claudeSummarizer(undefined, "claude-opus-5-5")).toEqual({});
+	});
+
+	it("summarizes with the configured model, low effort and server-side fallbacks", async () => {
+		let sent: unknown;
+		server.use(
+			http.post(MESSAGES, async ({ request }) => {
+				sent = await request.json();
+				return HttpResponse.json(message("end_turn", "  A short summary.  "));
+			}),
+		);
+		const { ai } = claudeSummarizer("sk-ant-test", "claude-opus-5-5");
+		const result = await ai?.summarize("Long text");
+		expect(result?._unsafeUnwrap()).toBe("A short summary.");
+		expect(sent).toMatchObject({
+			model: "claude-opus-5-5",
+			fallbacks: "default",
+			output_config: { effort: "low" },
+		});
+	});
+
+	it("maps a refusal, a rate limit and other API errors to expected failures", async () => {
+		const { ai } = claudeSummarizer("sk-ant-test", "claude-opus-5-5");
+		server.use(
+			http.post(MESSAGES, () => HttpResponse.json(message("refusal", ""))),
+		);
+		expect((await ai?.summarize("x"))?._unsafeUnwrapErr()).toEqual({
+			kind: "refused",
+		});
+		const error = (status: number) =>
+			HttpResponse.json(
+				{ type: "error", error: { type: "error", message: "nope" } },
+				{ status, headers: { "x-should-retry": "false" } },
+			);
+		server.use(http.post(MESSAGES, () => error(429)));
+		expect((await ai?.summarize("x"))?._unsafeUnwrapErr()).toEqual({
+			kind: "busy",
+		});
+		server.use(http.post(MESSAGES, () => error(400)));
+		expect((await ai?.summarize("x"))?._unsafeUnwrapErr()).toEqual({
+			kind: "upstream",
+		});
+	});
+});

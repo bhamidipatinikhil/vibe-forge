@@ -1,0 +1,21 @@
+id: no-empty-catch
+language: TypeScript
+severity: error
+message: 'An empty catch block swallows the error.'
+note: 'Handle it, log it through src/logger.ts, or rethrow. If ignoring it is intended, leave a comment inside the block saying why.'
+rule:
+  kind: catch_clause
+  has:
+    kind: statement_block
+    regex: '^\{\s*\}$'
+---
+id: no-empty-catch-tsx
+language: Tsx
+severity: error
+message: 'An empty catch block swallows the error.'
+note: 'Handle it, log it through src/logger.ts, or rethrow. If ignoring it is intended, leave a comment inside the block saying why.'
+rule:
+  kind: catch_clause
+  has:
+    kind: statement_block
+    regex: '^\{\s*\}$'

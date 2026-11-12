@@ -1,0 +1,21 @@
+import type { JSONContent } from "@tiptap/react";
+import { expect, test } from "vitest";
+import { page } from "vitest/browser";
+import { render } from "vitest-browser-react";
+import { RichTextEditor } from "./editor";
+
+test("edits a document and reports it as JSON", async () => {
+	const documents: JSONContent[] = [];
+	await render(
+		<RichTextEditor
+			label="Notes"
+			onChange={(document) => {
+				documents.push(document);
+			}}
+		/>,
+	);
+	const editor = page.getByRole("textbox", { name: "Notes" });
+	await editor.click();
+	await editor.fill("Hello");
+	await expect.poll(() => JSON.stringify(documents.at(-1))).toContain("Hello");
+});

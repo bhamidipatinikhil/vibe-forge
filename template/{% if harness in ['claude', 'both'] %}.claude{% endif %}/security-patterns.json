@@ -1,0 +1,21 @@
+{
+	"patterns": [
+		{
+			"rule_name": "raw_sql_template",
+			"regex": "(query|execute)\\(`[^`]*\\$\\{",
+			"reminder": "Interpolated SQL. Use parameterized queries / the ORM query builder."
+		},
+		{
+			"rule_name": "secret_prefix",
+			"substrings": ["sk_live_", "AKIA", "ghp_", "npm_"],
+			"reminder": "Hardcoded credential prefix. Load from env via the validated env module."
+		},
+		{
+			"rule_name": "process_env_outside_env_module",
+			"regex": "process\\.env\\.",
+			"paths": ["**/src/**"],
+			"exclude_paths": ["**/src/env.ts", "**/*.test.ts"],
+			"reminder": "Direct process.env read. Configuration enters through src/env.ts (t3-env + Zod); import `env` from there instead."
+		}
+	]
+}

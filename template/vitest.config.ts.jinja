@@ -1,0 +1,39 @@
+import { defineConfig } from "vitest/config";
+
+// `vitest run` runs every project{% if kind == 'web' %} (unit in Node, browser in the Nix Chromium){% endif %}; coverage is collected
+// across them and held to the thresholds below.
+export default defineConfig({
+	test: {
+		projects: ["./vitest.unit.config.ts"{% if kind == 'web' %}, "./vitest.browser.config.ts"{% endif %}],
+		coverage: {
+			provider: "v8",
+			include: ["src"],
+			exclude: [
+				"src/**/*.d.ts",
+				"src/instrumentation.ts",
+				"src/infra/db/schema.gen.ts",
+{%- if kind == 'web' %}
+				// Wiring verified by the e2e suite (pages, entries, router) and generated code.
+				"src/ui/routes/**",
+				"src/ui/routeTree.gen.ts",
+				"src/ui/paraglide/**",
+				"src/ui/router.tsx",
+				"src/ui/client.tsx",
+				"src/ui/server.ts",
+				"src/ui/public-env.ts",
+{%- endif %}
+			],
+			reporter: ["text", "json-summary", "html"],
+			reportsDirectory: "reports/coverage",
+			reportOnFailure: true,
+			thresholds: {
+				lines: 80,
+				functions: 80,
+				branches: 75,
+				statements: 80,
+				perFile: { lines: 60, functions: 60, branches: 50, statements: 60 },
+				"src/domain/**": { lines: 90, branches: 85, perFile: true },
+			},
+		},
+	},
+});
