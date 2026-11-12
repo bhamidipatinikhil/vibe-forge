@@ -262,7 +262,7 @@ Copier asks the questions below. Press Enter to keep a default.
 | `github_owner` | `bhamidipatinikhil` | Written into `.github/CODEOWNERS`, so you are asked to review agent changes |
 | `npm_scope` | empty, or `acme` | Makes the package `@acme/recipe-box`; leave empty if unsure |
 | `kind` | `web` | `web` = website + API; `service` = API only (see chapter 1) |
-| `harness` | `both` (default) | Which agent adapters to render: `claude` = Claude Code (`.claude/`, `CLAUDE.md`), `opencode` = OpenCode V2 (`.opencode/`, `opencode.jsonc`), `both` = both. `AGENTS.md` is the shared brief either way; the gates are the same `just check` |
+| `harness` | `both` (default) | Which agent adapters to render: `claude` = Claude Code (`.claude/`, `CLAUDE.md`), `opencode` = OpenCode V2 (`.opencode/command/`, root `opencode.jsonc`), `both` = both. `AGENTS.md` is the shared brief either way; the gates are the same `just check` |
 | `node_major` | `26` | `26` is the current LTS; choose `24` only if your host requires it |
 | `with_playwright` | `yes` | Browser tests, accessibility checks, security specs; `web` requires it |
 | `with_python` | `no` | Adds Python 3.12 + uv to the shell, for data scripts |

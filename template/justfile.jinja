@@ -175,3 +175,7 @@ prune-scratch feature:
 metrics:
     @echo "commits per month (last 12):"
     @git log --format='%ad' --date=format:'%Y-%m' | sort | uniq -c | sort -k2
+
+# Task queue: print the dependency-ordered open tasks from plans/**/*.md (extra args go to the script, e.g. --bd).
+sync-tasks *args:
+    node scripts/sync-tasks.mjs {{ '{{' }}args{{ '}}' }}

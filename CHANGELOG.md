@@ -17,8 +17,8 @@ layer, pipelines and harness adapters of approach-1, plus the elements neither a
   template-update), expand-only migrations with Squawk and the oasdiff breaking-change gate, and `copier update`
   following the template's `main`.
 - **Harness adapters (new)**: the `harness` question (`claude`, `opencode` or `both`, default `both`). `.claude/`
-  and `CLAUDE.md` render only for `claude`/`both`; `.opencode/` (an `opencode.jsonc` permission posture mirroring
-  the Claude deny/ask lists, plus a `/check` command running the gate) renders only for `opencode`/`both`.
+  and `CLAUDE.md` render only for `claude`/`both`; a root `opencode.jsonc` (the permission posture mirroring
+  the Claude deny/ask lists) and `.opencode/command/` (a `/check` command running the gate) render only for `opencode`/`both`.
   `AGENTS.md` is the shared, harness-neutral brief; `justfile`'s `shellcheck` and `doctor` recipes adapt to the
   rendered adapters. Gates stay in `just` recipes, so every harness (and a human) runs the identical gate.
 - **Knowledge layer (new)**: `docs/glossary.md` (canonical terms), `docs/registry.md` (web only: the scoped

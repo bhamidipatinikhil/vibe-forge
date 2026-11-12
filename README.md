@@ -72,7 +72,7 @@ Copier asks the questions declared in `copier.yml`; every answer is recorded in 
 | `github_owner` | str | (required) | GitHub user or org, written into `.github/CODEOWNERS` |
 | `npm_scope` | str | `""` | npm scope without the `@`; empty for an unscoped package name |
 | `kind` | choice | `web` | `web` (TanStack Start inside Hono) or `service` (Hono + Zod OpenAPI only); both carry the backend layers. `library` is listed but disabled, and rejected for `--data` too ("not implemented in this version") |
-| `harness` | choice | `both` | Agent adapter(s) to render: `claude` (`.claude/`, `CLAUDE.md`), `opencode` (`.opencode/`, `opencode.jsonc`) or `both`. `AGENTS.md` is the shared brief; the gates are the same `just check` |
+| `harness` | choice | `both` | Agent adapter(s) to render: `claude` (`.claude/`, `CLAUDE.md`), `opencode` (`.opencode/command/`, root `opencode.jsonc`) or `both`. `AGENTS.md` is the shared brief; the gates are the same `just check` |
 | `node_major` | int | `26` | `26` = Active LTS since 2026-10-28, `24` = Maintenance LTS (flake + `engines` + Docker base image) |
 | `with_playwright` | bool | `true` | Playwright + axe e2e/security/smoke specs and the Nix-provided Chromium; `kind=web` requires it (Vitest browser mode, e2e and Lighthouse use that Chromium) |
 | `with_python` | bool | `false` | `python312` + `uv` with `UV_PYTHON` pinned to the Nix interpreter |
@@ -154,8 +154,8 @@ changes included (`--vcs-ref HEAD` on this clone's directory):
 
 Such a project records your clone's absolute path, so it cannot be updated from GitHub: use it to look, then delete it.
 
-A project records the `main` commit it was made from as `_commit`, for example `v0.1.0-2-g871465d`: 2 commits after
-the tag `v0.1.0`, commit `871465d` (`git describe --tags`). When `main` is exactly on a tag, it records the tag.
+A project records the `main` commit it was made from as `_commit`, for example `v0.1.0-2-gc17a61b`: 2 commits after
+the tag `v0.1.0`, commit `c17a61b` (`git describe --tags`). When `main` is exactly on a tag, it records the tag.
 
 ## How a generated project updates
 
@@ -171,7 +171,7 @@ git status                       # review the diff and any *.rej files, re-lock 
   new template commit with the recorded answers, three-way-merges the result over your changes, and writes a `.rej`
   file next to every file it could not merge (`--conflict inline` leaves git-style markers instead).
 - Always keep `--vcs-ref main`. Without it Copier goes to the newest release tag instead, which is older than the
-  project's `main` commit, and stops with "You are downgrading from 0.1.0.post2.dev0+871465d to 0.1.0. Downgrades are
+  project's `main` commit, and stops with "You are downgrading from 0.1.0.post2.dev0+c17a61b to 0.1.0. Downgrades are
   not supported."
 - Template-owned files (flake, justfile, lefthook, lint configs, `.github/workflows/*`, `.claude/*`) are synced.
   Project-owned files are listed in `_skip_if_exists` in `copier.yml` (`README.md`, `docs/decisions/*.md`, `src/**`,
@@ -338,7 +338,7 @@ vibe-forge/                      # git repo, tagged v0.1.0, v0.2.0 … (PEP 440)
     ├── db/schema.sql  migrations/20261103000000_auth.sql   # generated from / applied by dbmate; the auth tables
     ├── .github/{CODEOWNERS.jinja, workflows/{ci,secpass,supply-chain,deploy,migrations,template-update}.yml}
     ├── README.md.jinja  AGENTS.md.jinja  {% if harness in ['claude', 'both'] %}CLAUDE.md{% endif %}  REVIEW.md
-    │   {% if harness in ['opencode', 'both'] %}.opencode/{opencode.jsonc, command/check.md}{% endif %}
+    │   {% if harness in ['opencode', 'both'] %}opencode.jsonc  .opencode/command/check.md{% endif %}
     ├── {% if harness in ['claude', 'both'] %}.claude/{settings.json, ci-settings.json, hooks/{guard,guard-config,verify-install,gates,re-inject}.sh,
     │            hooks/tests/hooks.test.ts, rules/{api.md.jinja,tests.md,migrations.md,modules.md.jinja,ui.md (web)},
     │            agents/reviewer.md, skills/{release/SKILL.md,study-reference/SKILL.md.jinja},
@@ -381,8 +381,8 @@ answers change `package.json` (see Quick start), and listed in `_skip_if_exists`
 The enforced substrate (gates, security, CI/CD, updates) is vibe-template's; vibe-forge adds the layer it lacked,
 plus the elements neither earlier approach shipped. ADR 0004 records the reasoning.
 
-- **Harness adapters.** The `harness` answer renders `.claude/` (`claude`/`both`), `.opencode/` + `opencode.jsonc`
-  (`opencode`/`both`), or both (the default). `AGENTS.md` is the shared, harness-neutral brief; the gates are `just`
+- **Harness adapters.** The `harness` answer renders `.claude/` (`claude`/`both`), `.opencode/command/` + a root
+  `opencode.jsonc` (`opencode`/`both`), or both (the default). `AGENTS.md` is the shared, harness-neutral brief; the gates are `just`
   recipes, so "done" is identical for any harness. Claude Code keeps the deeper integration (the Stop-hook gate,
   the sandbox, the plugins); the OpenCode adapter mirrors the permission posture and documents that its enforcement
   is `just check` + lefthook (OpenCode has no Stop hook).

@@ -22,7 +22,7 @@ Report at most five Nits per review.
 
 - New API routes have an integration test
 - Log lines don't include email addresses, user IDs, or request bodies
-- Every data access is scoped by the authenticated principal (the API rule: `.claude/rules/api.md` in Claude Code projects, the modules section of `AGENTS.md` in OpenCode projects)
+- Every data access is scoped by the authenticated principal (the API rule: {%- if harness in ['claude', 'both'] %} `.claude/rules/api.md`{%- endif %}{%- if harness == 'both' %}; for OpenCode sessions:{%- elif harness == 'opencode' %} the endpoint conventions in{%- endif %}{%- if harness in ['opencode', 'both'] %} `AGENTS.md`{%- endif %})
 
 ## Evidence
 

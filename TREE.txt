@@ -63,7 +63,7 @@ template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/skills/release
 template/{% if harness in ['claude', 'both'] %}.claude{% endif %}/skills/study-reference/SKILL.md.jinja
 template/{% if harness in ['claude', 'both'] %}CLAUDE.md{% endif %}.jinja
 template/{% if harness in ['opencode', 'both'] %}.opencode{% endif %}/command/check.md
-template/{% if harness in ['opencode', 'both'] %}.opencode{% endif %}/opencode.jsonc
+template/{% if harness in ['opencode', 'both'] %}opencode.jsonc{% endif %}.jinja
 template/{% if kind == 'web' %}components.json{% endif %}
 template/{% if kind == 'web' %}content-collections.ts{% endif %}
 template/{% if kind == 'web' %}content{% endif %}/posts/hello-world.mdx
@@ -93,7 +93,7 @@ template/pnpm-lock.yaml
 template/pnpm-workspace.yaml.jinja
 template/README.md.jinja
 template/renovate.json
-template/REVIEW.md
+template/REVIEW.md.jinja
 template/rules/import-meta-env-only-in-client-env.yml
 template/rules/no-as-any.yml
 template/rules/no-console-outside-logger.yml

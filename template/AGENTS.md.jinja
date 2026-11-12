@@ -42,5 +42,5 @@
 {%- endif %}
 {%- if harness in ['opencode', 'both'] %}
 - Start OpenCode from the dev shell (`direnv allow`, or `nix develop -c opencode`; OpenCode itself comes from your PATH, not the flake): it reads this `AGENTS.md` and `docs/glossary.md` automatically. OpenCode has no Stop hook, so nothing enforces the gate for you — run `just check` before you declare a task done.
-- Permissions live in `opencode.jsonc` (same posture as `.claude/settings.json` where both are rendered): installs, `git push`, `rm -rf`, `sudo`, `curl`/`wget`, `pnpm add`/`install`/`update`/`dlx`, `npx`, `dbmate`, `psql` and `nix flake update` ask; secrets (`~/.ssh`, `.env`, `~/.config/sops`, `~/.config/gh`, `~/.npmrc`) are hidden from sandboxed commands.
+- Permissions live in `opencode.jsonc`{% if harness == 'both' %} (same posture as `.claude/settings.json`){% endif %}: installs, `git push`, `rm -rf`, `sudo`, `curl`/`wget`, `pnpm add`/`install`/`update`/`dlx`, `npx`, `dbmate`, `psql` and `nix flake update` ask; secrets (`~/.ssh`, `.env`, `~/.config/sops`, `~/.config/gh`, `~/.npmrc`) are hidden from sandboxed commands.
 {%- endif %}
