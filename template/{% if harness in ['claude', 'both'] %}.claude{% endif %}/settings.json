@@ -201,9 +201,7 @@
 				"./.env.*",
 				"./secrets/*.dec.env"
 			],
-			"allowRead": [
-				"./.env.example"
-			]
+			"allowRead": ["./.env.example"]
 		},
 		"network": {
 			"allowedDomains": [
