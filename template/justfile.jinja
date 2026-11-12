@@ -156,16 +156,16 @@ distill:
 
 # Harvest init: start an ephemeral scratchpad for a feature's raw reference material.
 harvest-init feature:
-    mkdir -p ".scratch/pipelines/{{ feature }}/inputs" ".scratch/pipelines/{{ feature }}/assets"
-    @if [ ! -f ".scratch/pipelines/{{ feature }}/CATALOG.md" ]; then \
-      printf '# Harvested Component & Metaphor Catalog: %s\n\n> Ephemeral discovery file. Selected components are mediated into docs/registry.md; the rest is pruned.\n\n## Sources Inspected\n- \n\n## Categorized Components\n| ID | Category | Name | Source | Candidate Scope | Mechanism / Format | Notes |\n|---|---|---|---|---|---|---|\n' "{{ feature }}" > ".scratch/pipelines/{{ feature }}/CATALOG.md"; \
+    mkdir -p ".scratch/pipelines/{{ '{{' }}feature{{ '}}' }}/inputs" ".scratch/pipelines/{{ '{{' }}feature{{ '}}' }}/assets"
+    @if [ ! -f ".scratch/pipelines/{{ '{{' }}feature{{ '}}' }}/CATALOG.md" ]; then \
+      printf '# Harvested Component & Metaphor Catalog: %s\n\n> Ephemeral discovery file. Selected components are mediated into docs/registry.md; the rest is pruned.\n\n## Sources Inspected\n- \n\n## Categorized Components\n| ID | Category | Name | Source | Candidate Scope | Mechanism / Format | Notes |\n|---|---|---|---|---|---|---|\n' "{{ '{{' }}feature{{ '}}' }}" > ".scratch/pipelines/{{ '{{' }}feature{{ '}}' }}/CATALOG.md"; \
     fi
-    @echo "harvest workspace ready at .scratch/pipelines/{{ feature }}/"
+    @echo "harvest workspace ready at .scratch/pipelines/{{ '{{' }}feature{{ '}}' }}/"
 
 # Prune: garbage-collect a feature's ephemeral scratchpad after distillation.
 prune-scratch feature:
-    rm -rf ".scratch/pipelines/{{ feature }}"
-    @echo "pruned .scratch/pipelines/{{ feature }}/"
+    rm -rf ".scratch/pipelines/{{ '{{' }}feature{{ '}}' }}"
+    @echo "pruned .scratch/pipelines/{{ '{{' }}feature{{ '}}' }}/"
 
 # Metrics: commit counts per month (docs/metrics.md holds the full table).
 metrics:
